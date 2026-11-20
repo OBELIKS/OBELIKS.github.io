@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OBELIKS Projects</title>
+<meta name="description" content="Small engineering tools by OBELIKS.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#eceff3; --surface:#fff; --line:#cdd4dd; --edge:#8d98a7;
+  --fg:#141b24; --muted:#5b6676;
+  --accent:#1f47c9; --accent-fg:#fff; --accent-soft:#e3e9fb;
+  --f-display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f141a; --surface:#171e27; --line:#2e3946; --edge:#6b7889;
+  --fg:#e6ebf1; --muted:#98a4b4;
+  --accent:#86a2ff; --accent-fg:#0f141a; --accent-soft:#1d2a4d; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f141a; --surface:#171e27; --line:#2e3946; --edge:#6b7889;
+  --fg:#e6ebf1; --muted:#98a4b4;
+  --accent:#86a2ff; --accent-fg:#0f141a; --accent-soft:#1d2a4d; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.5}
+main{max-width:880px;margin:0 auto;padding:40px 16px 64px}
+header{padding-bottom:16px;margin-bottom:28px;border-bottom:1px solid var(--line);position:relative}
+header::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:7px;background:repeating-linear-gradient(90deg,var(--edge) 0 1px,transparent 1px 10px);opacity:.55}
+h1{font-family:var(--f-display);font-weight:700;font-size:2.2rem;line-height:1.05;margin:0}
+.sub{color:var(--muted);margin:6px 0 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,380px),1fr));gap:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px;display:flex;flex-direction:column;gap:10px}
+.card h2{font-family:var(--f-display);font-weight:700;font-size:1.4rem;margin:0;line-height:1.15}
+.card p{margin:0;color:var(--muted)}
+.meta{font-family:var(--f-mono);font-size:.8rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 14px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:auto;padding-top:6px}
+.btn{display:inline-block;padding:8px 16px;border-radius:7px;font-weight:600;text-decoration:none;border:1px solid var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-fg)}
+.btn:hover{background:var(--accent-soft)}
+.btn.primary:hover{filter:brightness(1.1);background:var(--accent)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+footer{margin-top:40px;font-size:.9rem;color:var(--muted)}
+footer a{color:inherit}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Projects</h1>
+    <p class="sub">Small engineering tools.</p>
+  </header>
+  <div class="grid">
+    <article class="card">
+      <h2>Sheet Nesting Planner</h2>
+      <p>Nest rectangular sheet metal parts, reduce sheet heights and report the material loss. Imports Excel, CSV and Salvagnini XML; exports Excel and a Word report.</p>
+      <div class="meta"><span>Browser app</span><span><!--ver:sheet-nesting-->v1.5.0 · 16.11.2026<!--/ver--></span></div>
+      <div class="actions"><a class="btn primary" href="sheet-nesting/">Open app</a></div>
+    </article>
+    <article class="card">
+      <h2>gclean</h2>
+      <p>G-code cleaner for Windows.</p>
+      <div class="meta"><span>AutoIt · Windows</span></div>
+      <div class="actions"><a class="btn" href="https://github.com/OBELIKS/gclean">Repository</a></div>
+    </article>
+  </div>
+  <footer><a href="https://github.com/OBELIKS">github.com/OBELIKS</a></footer>
+</main>
+</body>
+</html>
