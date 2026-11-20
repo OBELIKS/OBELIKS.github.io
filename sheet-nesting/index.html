@@ -1,0 +1,2101 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Sheet Nesting Planner</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js" integrity="sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT" crossorigin="anonymous"></script>
+<style>
+/* Layout: workshop control panel — settings + parts list on the left, nested sheets drawn to scale on the right */
+:root{
+  --bg:#eceff3; --surface:#ffffff; --surface-2:#f4f6f9; --line:#cdd4dd;
+  --fg:#141b24; --muted:#5b6676;
+  --accent:#1f47c9; --accent-fg:#ffffff; --accent-soft:#e3e9fb;
+  --sheet:#d9dee5; --sheet-edge:#8d98a7;
+  --saved:#2e7d55; --saved-soft:#dcefe3;
+  --warn:#a8481a; --warn-soft:#f8e6d9;
+  --c0:#9db4e8; --c1:#e8b98a; --c2:#a9d3b5; --c3:#d9a5c4; --c4:#e3d07f; --c5:#9fd0d6; --c6:#c3b2e6; --c7:#e3a3a0;
+  --part-stroke:#2a3442; --part-text:#141b24;
+  --paper:#ffffff;
+  --f-display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f141a; --surface:#171e27; --surface-2:#1d2630; --line:#2e3946;
+  --fg:#e6ebf1; --muted:#98a4b4;
+  --accent:#86a2ff; --accent-fg:#0f141a; --accent-soft:#1d2a4d;
+  --sheet:#2a333e; --sheet-edge:#6b7889;
+  --saved:#5cc48e; --saved-soft:#16301f;
+  --warn:#f0965a; --warn-soft:#3a2416;
+  --c0:#4c66a8; --c1:#a5703f; --c2:#4f8a62; --c3:#965a80; --c4:#9c8a3c; --c5:#3f8790; --c6:#7562a5; --c7:#a2524f;
+  --part-stroke:#0b0f14; --part-text:#f2f5f9; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f141a; --surface:#171e27; --surface-2:#1d2630; --line:#2e3946;
+  --fg:#e6ebf1; --muted:#98a4b4;
+  --accent:#86a2ff; --accent-fg:#0f141a; --accent-soft:#1d2a4d;
+  --sheet:#2a333e; --sheet-edge:#6b7889;
+  --saved:#5cc48e; --saved-soft:#16301f;
+  --warn:#f0965a; --warn-soft:#3a2416;
+  --c0:#4c66a8; --c1:#a5703f; --c2:#4f8a62; --c3:#965a80; --c4:#9c8a3c; --c5:#3f8790; --c6:#7562a5; --c7:#a2524f;
+  --part-stroke:#0b0f14; --part-text:#f2f5f9; color-scheme:dark}
+
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.45}
+.app{max-width:1440px;margin:0 auto;padding-block:20px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:20px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px 24px;padding-bottom:14px;border-bottom:1px solid var(--line);position:relative}
+header::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:7px;background:repeating-linear-gradient(90deg,var(--sheet-edge) 0 1px,transparent 1px 10px);opacity:.55;pointer-events:none}
+h1{font-family:var(--f-display);font-weight:700;font-size:1.9rem;letter-spacing:.01em;margin:0;line-height:1.05;text-wrap:balance}
+.sub{color:var(--muted);margin:4px 0 0;max-width:62ch}
+.units{font-family:var(--f-mono);font-size:.78rem;color:var(--muted);letter-spacing:.04em}
+
+.grid{display:grid;grid-template-columns:minmax(0,430px) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:980px){.grid{grid-template-columns:minmax(0,1fr)}}
+.col{display:flex;flex-direction:column;gap:16px;min-width:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+h2{font-family:var(--f-display);font-weight:600;font-size:1.05rem;letter-spacing:.06em;text-transform:uppercase;margin:0;display:flex;align-items:baseline;gap:8px}
+h2 small{font-family:var(--f-body);text-transform:none;letter-spacing:0;font-weight:400;color:var(--muted);font-size:.85rem}
+.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field label{font-size:.82rem;color:var(--muted);font-weight:500}
+.inwrap{display:flex;align-items:center;border:1px solid var(--line);border-radius:4px;background:var(--surface-2)}
+.inwrap:focus-within{outline:2px solid var(--accent);outline-offset:1px}
+.inwrap input{flex:1;min-width:0;border:0;background:transparent;color:var(--fg);font-family:var(--f-mono);font-size:.95rem;padding:7px 8px;outline:none;font-variant-numeric:tabular-nums}
+.inwrap span{font-family:var(--f-mono);font-size:.75rem;color:var(--muted);padding-right:8px}
+.check{display:flex;align-items:center;gap:8px;font-size:.92rem;grid-column:1/-1}
+.check input{width:18px;height:18px;accent-color:var(--accent)}
+.hint{font-size:.82rem;color:var(--muted);margin:0}
+
+.btn{font:inherit;font-weight:600;border-radius:4px;padding:8px 14px;cursor:pointer;border:1px solid var(--line);background:var(--surface-2);color:var(--fg);display:inline-flex;align-items:center;gap:6px}
+.btn:hover{border-color:var(--sheet-edge)}
+.btn:focus-visible,.x:focus-visible,.drop:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);padding:10px 20px;font-family:var(--f-display);letter-spacing:.05em;text-transform:uppercase;font-size:1rem}
+.btn.stop{background:var(--warn);border-color:var(--warn);color:var(--surface)}
+.btn.small{padding:5px 10px;font-size:.85rem;font-weight:500}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+
+.drop{border:1.5px dashed var(--sheet-edge);border-radius:6px;padding:14px;text-align:center;color:var(--muted);font-size:.9rem;cursor:pointer;background:var(--surface-2)}
+.drop strong{color:var(--fg)}
+.drop.over{border-color:var(--accent);background:var(--accent-soft);color:var(--fg)}
+
+.tablewrap{overflow-x:auto;min-width:0}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+.ptable th{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;text-align:left;padding:4px 4px 6px;border-bottom:1px solid var(--line)}
+.ptable td{padding:3px 4px;border-bottom:1px solid var(--line)}
+.ptable input{width:100%;min-width:0;border:1px solid transparent;border-radius:3px;background:transparent;color:var(--fg);font:inherit;font-size:.9rem;padding:4px 5px}
+.ptable input.num{font-family:var(--f-mono);font-size:.85rem;text-align:right}
+.ptable input:hover{border-color:var(--line)}
+.ptable input:focus{border-color:var(--accent);outline:none;background:var(--surface-2)}
+.ptable input.bad{border-color:var(--warn);background:var(--warn-soft)}
+.ptable tr.over td{background:var(--warn-soft)}
+.ptable tr.over input.num{color:var(--warn);font-weight:600}
+.ptable col.c-sw{width:18px}.ptable col.c-w,.ptable col.c-h{width:76px}.ptable col.c-q{width:54px}.ptable col.c-x{width:30px}
+.sw{display:inline-block;width:12px;height:12px;border-radius:2px;border:1px solid var(--part-stroke);vertical-align:middle}
+.x{border:0;background:transparent;color:var(--muted);font-size:1.15rem;line-height:1;cursor:pointer;border-radius:3px;padding:2px 6px}
+.x:hover{color:var(--warn);background:var(--warn-soft)}
+.psum{font-family:var(--f-mono);font-size:.8rem;color:var(--muted)}
+details{font-size:.88rem;color:var(--muted)}
+details summary{cursor:pointer;color:var(--fg);font-weight:500}
+details code,details pre{font-family:var(--f-mono);font-size:.78rem;color:var(--fg)}
+details pre{background:var(--surface-2);border:1px solid var(--line);border-radius:4px;padding:8px;overflow-x:auto;margin:6px 0}
+
+.runbar{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px}
+.runbar .field{width:150px}
+.progress{flex:1 1 240px;min-width:0;display:flex;flex-direction:column;gap:5px}
+.bar{height:6px;border-radius:3px;background:var(--surface-2);border:1px solid var(--line);overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .15s linear}
+.ptext{font-family:var(--f-mono);font-size:.78rem;color:var(--muted);min-height:1.2em}
+.msg{border-radius:4px;padding:9px 12px;font-size:.9rem;background:var(--warn-soft);color:var(--fg);border-left:3px solid var(--warn)}
+.stale{border-radius:4px;padding:8px 12px;font-size:.88rem;background:var(--accent-soft);border-left:3px solid var(--accent)}
+
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+@media (max-width:720px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.stat{background:var(--surface);padding:12px 14px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.stat .k{font-size:.75rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600}
+.stat .v{font-family:var(--f-display);font-weight:700;font-size:1.85rem;line-height:1.1;font-variant-numeric:tabular-nums}
+.stat .s{font-family:var(--f-mono);font-size:.78rem;color:var(--muted)}
+.stat.good .v{color:var(--saved)}
+
+.rtable th,.rtable td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.rtable th{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;text-align:right;vertical-align:bottom}
+.rtable th:first-child,.rtable td:first-child{text-align:left}
+.rtable td{text-align:right;font-family:var(--f-mono);font-size:.83rem}
+.rtable tfoot td{font-weight:500;border-top:2px solid var(--line);border-bottom:0}
+.rtable .pct{color:var(--muted)}
+.rtable .good{color:var(--saved)}
+
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.85rem}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend em{font-style:normal;font-family:var(--f-mono);font-size:.78rem;color:var(--muted)}
+.keys{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.8rem;color:var(--muted)}
+.keys span{display:inline-flex;align-items:center;gap:6px}
+.kbox{width:18px;height:11px;border:1px solid var(--sheet-edge);display:inline-block}
+.kbox.red{background:var(--sheet)}
+.kbox.sav{background:repeating-linear-gradient(45deg,var(--saved) 0 2px,var(--saved-soft) 2px 6px);border-color:var(--saved)}
+.kcut{width:20px;border-top:2px dashed var(--accent);display:inline-block}
+.kgcut{width:20px;border-top:1.5px dashed var(--fg);opacity:.6;display:inline-block}
+
+.sheets{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,420px),1fr));gap:16px}
+.sheetcard{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.sheetcard header{border:0;padding:0;align-items:baseline}
+.sheetcard header::after{display:none}
+.sheetcard h3{font-family:var(--f-display);font-weight:700;font-size:1.15rem;margin:0}
+.sheetcard .meta{font-family:var(--f-mono);font-size:.78rem;color:var(--muted)}
+.sheetcard svg{width:100%;height:auto;display:block}
+.sheetcard .foot{font-family:var(--f-mono);font-size:.78rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 14px}
+.sheetcard .foot b{color:var(--fg);font-weight:500}
+.sheetcard .sbody{display:flex;flex-direction:column;gap:8px}
+/* portrait sheets: drawing capped in height, stats beside it */
+.sheetcard.tall .sbody{flex-direction:row;align-items:flex-start;gap:14px}
+.sheetcard.tall svg{flex:none;width:min(60%,calc(min(64vh,560px)*var(--ar)))}
+.sheetcard.tall .side{display:flex;flex-direction:column;gap:10px;min-width:0}
+.sheetcard.tall .foot{flex-direction:column;gap:6px}
+.sheetcard .side .legend{flex-direction:column;gap:4px;font-size:.8rem}
+
+svg .sheet-max{stroke:var(--sheet-edge);vector-effect:non-scaling-stroke;stroke-width:1px}
+svg .sheet-red{fill:var(--sheet);stroke:var(--sheet-edge);vector-effect:non-scaling-stroke;stroke-width:1px}
+svg .saved-bg{fill:var(--saved-soft)}
+svg .saved-line{stroke:var(--saved);opacity:.55}
+svg .margin{fill:none;stroke:var(--sheet-edge);stroke-dasharray:3 3;vector-effect:non-scaling-stroke;stroke-width:1px;opacity:.8}
+svg .part{stroke:var(--part-stroke);vector-effect:non-scaling-stroke;stroke-width:1px}
+svg .c0{fill:var(--c0)}svg .c1{fill:var(--c1)}svg .c2{fill:var(--c2)}svg .c3{fill:var(--c3)}svg .c4{fill:var(--c4)}svg .c5{fill:var(--c5)}svg .c6{fill:var(--c6)}svg .c7{fill:var(--c7)}
+.sw.c0{background:var(--c0)}.sw.c1{background:var(--c1)}.sw.c2{background:var(--c2)}.sw.c3{background:var(--c3)}.sw.c4{background:var(--c4)}.sw.c5{background:var(--c5)}.sw.c6{background:var(--c6)}.sw.c7{background:var(--c7)}
+svg .plabel{fill:var(--part-text);font-family:var(--f-body);font-weight:600}
+svg .cut{stroke:var(--accent);stroke-dasharray:8 5;vector-effect:non-scaling-stroke;stroke-width:2px}
+svg .gcut{stroke:var(--fg);stroke-opacity:.6;stroke-dasharray:6 4;vector-effect:non-scaling-stroke;stroke-width:1px;fill:none}
+svg .cut-label{fill:var(--saved);font-family:var(--f-mono);font-weight:500}
+svg g.pg:hover .part{stroke:var(--accent);stroke-width:2px}
+
+.exrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding-top:10px;border-top:1px solid var(--line)}
+.exrow select{flex:1 1 200px;min-width:0;font:inherit;font-size:.88rem;color:var(--fg);background:var(--surface-2);border:1px solid var(--line);border-radius:4px;padding:6px 8px}
+.exrow select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.exlabel{font-size:.82rem;color:var(--muted);font-weight:500;width:100%}
+.expre{width:100%;max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:4px;background:var(--surface)}
+.expre table{width:100%}
+.expre th{position:sticky;top:0;background:var(--surface-2)}
+.exarea{width:100%;min-height:120px;font-family:var(--f-mono);font-size:.75rem;background:var(--surface-2);color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:8px}
+#exMsg.ok{color:var(--saved)}
+#exMsg.err{color:var(--warn)}
+#repMsg.ok{color:var(--saved)}
+#repMsg.err{color:var(--warn)}
+.edges{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center}
+.edges .lab{width:100%;font-size:.82rem;color:var(--muted);font-weight:500}
+.edges label{display:flex;align-items:center;gap:6px;font-size:.92rem}
+.edges input{width:18px;height:18px;accent-color:var(--accent)}
+.ptable:not(.has-type) .tcell{display:none}
+.ptable input{box-sizing:border-box}
+.ptable:not(.has-mat) .mcell{display:none}
+.mcell{width:62px}
+.ptable.has-mat col.c-w,.ptable.has-mat col.c-h,.ptable.has-type col.c-w,.ptable.has-type col.c-h{width:66px}
+.ptable.has-mat input.num{padding-left:2px;padding-right:3px}
+.ptable.has-mat col.c-q,.ptable.has-type col.c-q{width:40px}
+.ptable td .tbadge{font-size:.7rem;padding:1px 4px}
+.ptable input[data-k="id"]{min-width:72px}
+.tbadge.mat{background:var(--saved-soft)}
+.mats{display:flex;flex-direction:column;gap:12px}
+.matblk{display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid var(--line)}
+.mathead{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-weight:600;font-size:.92rem}
+.mathead .cnt{font-family:var(--f-mono);font-size:.8rem;color:var(--muted);font-weight:400}
+.matgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px 10px}
+.matgrid .bad{background:var(--warn-soft)}
+.sztick{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center}
+.sztick .lab{width:100%;font-size:.82rem;color:var(--muted);font-weight:500}
+.sztick label{display:flex;align-items:center;gap:6px;font-family:var(--f-mono);font-size:.85rem}
+.sztick input{width:17px;height:17px;accent-color:var(--accent)}
+.sizes input.num{font-size:.9rem}
+.sizes .x:disabled{opacity:.3;cursor:default;background:transparent;color:var(--muted)}
+.tcell{width:40px}
+.tbadge{font-family:var(--f-mono);font-size:.75rem;padding:1px 5px;border-radius:3px;background:var(--accent-soft);color:var(--fg);border:1px solid var(--line)}
+#typesBody td{padding:4px}
+#typesBody td.tc{font-family:var(--f-mono);font-size:.85rem}
+#typesBody td.cnt{text-align:right;font-family:var(--f-mono);font-size:.8rem;color:var(--muted);white-space:nowrap}
+.emptyst{border:1.5px dashed var(--line);border-radius:6px;padding:28px 20px;display:flex;flex-direction:column;gap:6px;align-items:flex-start;color:var(--muted)}
+.emptyst h3{font-family:var(--f-display);font-weight:600;font-size:1.2rem;color:var(--fg);margin:0}
+.emptyst p{margin:0;max-width:60ch}
+.ptable td.none{color:var(--muted);font-size:.88rem;padding:14px 4px;text-align:center}
+.remember{font-size:.78rem;color:var(--muted);display:flex;align-items:center;gap:6px;justify-content:flex-end}
+.linkbtn{font:inherit;font-size:.78rem;color:var(--accent);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.linkbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.copyarea{width:100%;min-height:140px;font-family:var(--f-mono);font-size:.75rem;background:var(--surface-2);color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:8px}
+.section-h{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+#logDlg{width:calc(100% - 32px);max-width:640px;max-height:80vh;overflow:hidden;flex-direction:column;background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:16px 20px;margin:auto}
+#logDlg[open]{display:flex}
+#logBody{overflow:auto;min-height:0;flex:1 1 auto}
+#logDlg::backdrop{background:rgba(10,14,20,.55)}
+#logDlg .logHead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px}
+#logDlg .logHead h2{margin:0}
+#logBody h3{margin:18px 0 4px;font-size:1.05rem;color:var(--fg)}
+#logBody h4{margin:12px 0 4px;font-size:.75rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+#logBody ul{margin:0 0 6px;padding-left:20px}
+#logBody li{margin:3px 0}
+#logBody p{margin:6px 0}
+#logBody code{font-family:var(--f-mono);font-size:.85em;background:var(--surface-2);border:1px solid var(--line);border-radius:3px;padding:0 3px}
+</style>
+
+<div class="app">
+  <header>
+    <div>
+      <h1>Sheet Nesting Planner</h1>
+      <p class="sub">Nests rectangular parts on the maximum sheet from the bottom up, then cuts each sheet down to the height it actually needs.</p>
+    </div>
+    <div>
+      <div class="units">All dimensions in mm · areas in m²</div>
+      <div class="remember"><span id="verWrap"><span id="verTxt"></span> · <button class="linkbtn" id="showLog" type="button">What's new</button> · </span><span id="rememberTxt">Settings are remembered in this browser</span> · <button class="linkbtn" id="resetSet" type="button" title="Resets settings and sheet sizes; keeps material properties and panel-type allowances">Reset to defaults</button></div>
+    </div>
+  </header>
+
+  <div class="grid">
+    <div class="col">
+      <section class="card" aria-labelledby="h-sheet">
+        <h2 id="h-sheet">Sheet sizes</h2>
+        <div class="tablewrap">
+          <table class="ptable sizes">
+            <colgroup><col><col><col class="c-x"></colgroup>
+            <thead><tr><th style="text-align:right">Width, fixed (mm)</th><th style="text-align:right">Height, can be reduced (mm)</th><th></th></tr></thead>
+            <tbody id="sizesBody"></tbody>
+          </table>
+        </div>
+        <div class="row"><button class="btn small" id="addSize" type="button">+ Add sheet size</button></div>
+        <div class="fields">
+          <div class="field"><label for="step">Round reduced height up to</label><div class="inwrap"><input id="step" inputmode="decimal" value="10"><span>mm</span></div></div>
+          <div class="field"><label for="minOff">Keep full size if offcut under</label><div class="inwrap"><input id="minOff" inputmode="decimal" value="100"><span>mm</span></div></div>
+        </div>
+        <p class="hint">With several sizes, each sheet gets the size that uses the least material after height reduction. Under Materials, tick which sizes each material comes in. Enter 0 in the rounding or offcut field to turn it off. Rounding is applied first, then the offcut check.</p>
+      </section>
+
+      <section class="card" id="matsCard" aria-labelledby="h-mats">
+        <h2 id="h-mats">Materials</h2>
+        <p class="hint">Each material is nested on its own sheets, using only the sheet sizes ticked for it. Density: steel 7850 · stainless 7900 · aluminium 2700. Thickness 0 hides mass, price 0 hides cost.</p>
+        <div id="matsBody" class="mats"></div>
+      </section>
+
+      <section class="card" aria-labelledby="h-tool">
+        <h2 id="h-tool">Tooling</h2>
+        <div class="fields">
+          <div class="field"><label for="gap">Gap between parts</label><div class="inwrap"><input id="gap" inputmode="decimal" value="5"><span>mm</span></div></div>
+          <div class="field"><label for="margin">Edge margin</label><div class="inwrap"><input id="margin" inputmode="decimal" value="10"><span>mm</span></div></div>
+          <label class="check"><input type="checkbox" id="rot" checked> Allow 90° rotation</label>
+          <div class="edges" role="group" aria-labelledby="edgesLab">
+            <span class="lab" id="edgesLab">Apply edge margin on</span>
+            <label><input type="checkbox" id="mL" checked> Left</label>
+            <label><input type="checkbox" id="mR" checked> Right</label>
+            <label><input type="checkbox" id="mB" checked> Bottom</label>
+            <label><input type="checkbox" id="topm" checked> Top</label>
+          </div>
+          <div class="field"><label for="gGap">Gap at guillotine cut</label><div class="inwrap"><input id="gGap" inputmode="decimal" value="0"><span>mm</span></div></div>
+          <div class="edges" role="group" aria-labelledby="glLab">
+            <span class="lab" id="glLab">Guillotine cuts (gap at cut instead of gap between parts)</span>
+            <label><input type="checkbox" id="gH"> Height – horizontal cuts</label>
+            <label><input type="checkbox" id="gW"> Width – vertical cuts</label>
+          </div>
+          <p class="hint" style="grid-column:1/-1;margin:0">One ticked: only cuts through the whole sheet count. Both: also cuts through pieces already cut off. Each try takes longer with guillotine cuts: for large jobs, give the search more time.</p>
+        </div>
+        <p class="hint" id="topHint"></p>
+      </section>
+
+      <section class="card" aria-labelledby="h-lim">
+        <h2 id="h-lim">Part size limits <small>optional</small></h2>
+        <div class="fields">
+          <div class="field"><label for="limW">Max width</label><div class="inwrap"><input id="limW" inputmode="decimal" value="" placeholder="No limit"><span>mm</span></div></div>
+          <div class="field"><label for="limH">Max height</label><div class="inwrap"><input id="limH" inputmode="decimal" value="" placeholder="No limit"><span>mm</span></div></div>
+          <div class="field"><label for="limD">Max diagonal</label><div class="inwrap"><input id="limD" inputmode="decimal" value="" placeholder="No limit"><span>mm</span></div></div>
+        </div>
+        <p class="hint">Checked on the blank size. A part passes if it fits the width and height limits either way round and its diagonal is within the limit. Parts over a limit are marked red in the parts list and left out of the nesting. Leave a field empty for no limit.</p>
+      </section>
+
+      <section class="card" id="typesCard" aria-labelledby="h-types" hidden>
+        <h2 id="h-types">Panel types <small>flat blank allowance</small></h2>
+        <p class="hint">Read from the XML file. The XML has finished panel sizes, so the blank nested on the sheet is the finished size plus the allowance for its type. Excel files already have the flat size and get no allowance.</p>
+        <div class="tablewrap">
+          <table class="ptable">
+            <thead><tr><th>Type</th><th style="text-align:right">Parts</th><th style="text-align:right">+ Width mm</th><th style="text-align:right">+ Height mm</th></tr></thead>
+            <tbody id="typesBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="h-parts">
+        <div class="section-h">
+          <h2 id="h-parts">Parts</h2>
+          <span class="psum" id="psum"></span>
+        </div>
+        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Load an Excel, CSV or XML file">
+          <strong>Drop an Excel, CSV or XML file</strong> or tap to choose.<br>Loading a file replaces the current list.
+          <input type="file" id="file" accept=".xlsx,.xls,.xlsm,.csv,.xml" hidden>
+        </div>
+        <div id="loadmsg" class="hint" hidden></div>
+        <div class="tablewrap">
+          <table class="ptable" id="ptable">
+            <colgroup><col class="c-sw"><col><col class="c-w"><col class="c-h"><col class="c-q"><col class="c-x"></colgroup>
+            <thead><tr><th></th><th>Part</th><th class="tcell">Type</th><th class="mcell">Material</th><th style="text-align:right">Width</th><th style="text-align:right">Height</th><th style="text-align:right">Qty</th><th></th></tr></thead>
+            <tbody id="partsBody"></tbody>
+          </table>
+        </div>
+        <div id="limMsg" class="msg" hidden></div>
+        <div class="row">
+          <button class="btn small" id="addPart" type="button">+ Add part</button>
+          <button class="btn small" id="loadSample" type="button">Load example parts</button>
+        </div>
+        <details>
+          <summary>File formats and example Excel files</summary>
+          <p><b>Excel / CSV:</b> one row per part with columns for name, width, height and quantity, plus an optional material column (<code>Material</code>). Sizes are the flat blank size. Header names are recognised in English or Slovene (e.g. <code>Naziv</code>, <code>Širina</code>, <code>Višina</code> or <code>Dolžina</code>, <code>Količina</code> or <code>Kos</code>). Without a header the order is name, width, height, qty. The first worksheet is used.</p>
+          <p><b>XML:</b> any element with width and height as attributes or child elements, for example:</p>
+<pre>&lt;Parts&gt;
+  &lt;Part id="Side panel" width="1180" height="640" qty="4"/&gt;
+  &lt;Part&gt;&lt;Name&gt;Bracket&lt;/Name&gt;&lt;Width&gt;260&lt;/Width&gt;
+        &lt;Height&gt;140&lt;/Height&gt;&lt;Qty&gt;12&lt;/Qty&gt;&lt;/Part&gt;
+&lt;/Parts&gt;</pre>
+        <div class="exrow" id="exRow">
+          <label class="exlabel" for="exSel">Example Excel tables</label>
+          <select id="exSel">
+            <option value="ahu">Example: AHU housing, English headers</option>
+            <option value="slo">Example: AHU housing, Slovene headers</option>
+            <option value="bare">Example: no header row</option>
+            <option value="large">Example: large job, 30 part types</option>
+          </select>
+          <button class="btn small" id="exCopy" type="button">Copy for Excel</button>
+          <button class="btn small" id="exCsv" type="button">Download CSV</button>
+          <p class="hint" id="exMsg" hidden></p>
+          <div class="expre" id="exPre"></div>
+          <p class="hint">Copy for Excel puts the table on the clipboard. In Excel, click cell A1 and paste. Download CSV saves it as a file (semicolon separated, decimal comma) that opens in Excel with a double-click.</p>
+          <textarea class="exarea" id="exArea" readonly hidden aria-label="Example table to copy"></textarea>
+        </div>
+        </details>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="card">
+        <div class="runbar">
+          <div class="field"><label for="time">Search time</label><div class="inwrap"><input id="time" inputmode="decimal" value="5"><span>s</span></div></div>
+          <button class="btn primary" id="run" type="button">Run nesting</button>
+          <div class="progress">
+            <div class="bar"><i id="barFill"></i></div>
+            <div class="ptext" id="ptext"></div>
+          </div>
+        </div>
+        <div id="err" class="msg" hidden></div>
+        <div id="stale" class="stale" hidden>Inputs changed since this result. Run nesting again to update it.</div>
+      </section>
+      <div id="results" class="col">
+        <div class="emptyst">
+          <h3>No nesting yet</h3>
+          <p>Load an Excel, CSV or XML file with your parts, or add them by hand in the Parts table. Then press Run nesting to see the sheets, the reduced heights and the loss.</p>
+          <p>To try the app first, press Load example parts.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <dialog id="logDlg" aria-labelledby="logTitle">
+    <div class="logHead"><h2 id="logTitle">What's new</h2><button class="x" id="logClose" type="button" aria-label="Close">×</button></div>
+    <div id="logBody"></div>
+  </dialog>
+</div>
+
+<script type="text/markdown" id="changelog">
+## 1.5.0 – 16.11.2026
+
+- Guillotine cuts: where two parts are separated by a straight cut through the sheet, the gap between them can be the smaller "gap at guillotine cut" instead of the normal gap between parts. Tick Height (horizontal cuts), Width (vertical cuts) or both.
+- Results show the cut lines on each sheet (dashed) and the report lists the setting.
+
+## 1.4.1 – 16.11.2026
+
+- Portrait sheets (taller than wide, e.g. 1.500 × 3.000) show the drawing with the figures beside it, on screen and in the Word report.
+
+## 1.4.0 – 16.11.2026
+
+- Save the report as a Word document (.docx) and the results as an Excel file.
+
+## 1.3.0 – 16.11.2026
+
+- Download results and example tables as CSV files that open in Excel.
+- CSV import reads decimal commas correctly.
+
+## 1.2.0 – 16.11.2026
+
+- Better results with several sheet sizes: fewer sheets for about the same material.
+
+## 1.1.0 – 15.11.2026
+
+- Fixes for file import, saved material settings, "Reset to defaults" and "Copy for Excel".
+- Updated Excel reader.
+
+## 1.0.0 – 15.11.2026
+
+- First stable version.
+
+## 0.9.0 – 15.11.2026
+
+- Version number and changelog.
+
+## 0.8.0 – 10.11.2026
+
+- Less material with several sheet sizes (about 1–1,5 %).
+
+## 0.7.0 – 10.11.2026
+
+- Part size limits: max width, height and diagonal.
+
+## 0.6.1 – 09.11.2026
+
+- Bug fixes; smaller and faster Word report.
+
+## 0.6.0 – 09.11.2026
+
+- Several sheet sizes, ticked per material.
+- Redesigned Word report.
+
+## 0.5.0 – 24.10.2026
+
+- Faster packing and a search that tries to save whole sheets.
+
+## 0.4.0 – 24.10.2026
+
+- Salvagnini XML import and panel-type allowances.
+- Materials with thickness, density and price; edge margin per edge.
+
+## 0.3.0 – 24.10.2026
+
+- Remembered settings, example Excel tables and the Word report.
+
+## 0.2.0 – 23.10.2026
+
+- Top margin, rounding of the reduced height and minimum offcut.
+
+## 0.1.0 – 23.10.2026
+
+- First version: parts from Excel, CSV or XML, nesting with sheet height reduction, loss figures, drawings and "Copy for Excel".
+</script>
+<script id="engine">
+/* ---------- Nesting engine (MaxRects, bottom-left rule, y measured from the sheet bottom) ---------- */
+const EPS = 1e-7;
+function contains(a, b) {
+  return b.x >= a.x - EPS && b.y >= a.y - EPS && b.x + b.w <= a.x + a.w + EPS && b.y + b.h <= a.y + a.h + EPS;
+}
+function newBin(W, H) { return { W, H, free: [{ x: 0, y: 0, w: W, h: H }], items: [], top: 0 }; }
+function findPos(bin, w, h, rot) {
+  const fr = bin.free, n = fr.length, tryRot = rot && Math.abs(w - h) > EPS;
+  let found = false, bt = Infinity, bx = Infinity, by = 0, bw = 0, bh = 0, br = false;
+  for (let i = 0; i < n; i++) {
+    const f = fr[i];
+    if (w <= f.w + EPS && h <= f.h + EPS) {
+      const t = f.y + h;
+      if (!found || t < bt - EPS || (t <= bt + EPS && f.x < bx - EPS)) { found = true; bt = t; bx = f.x; by = f.y; bw = w; bh = h; br = false; }
+    }
+    if (tryRot && h <= f.w + EPS && w <= f.h + EPS) {
+      const t = f.y + w;
+      if (!found || t < bt - EPS || (t <= bt + EPS && f.x < bx - EPS)) { found = true; bt = t; bx = f.x; by = f.y; bw = h; bh = w; br = true; }
+    }
+  }
+  return found ? { x: bx, y: by, w: bw, h: bh, r: br, t: bt } : null;
+}
+function placeRect(bin, p) {
+  const keep = [], fresh = [], px2 = p.x + p.w, py2 = p.y + p.h;
+  for (const f of bin.free) {
+    const fx2 = f.x + f.w, fy2 = f.y + f.h;
+    if (p.x >= fx2 - EPS || px2 <= f.x + EPS || p.y >= fy2 - EPS || py2 <= f.y + EPS) { keep.push(f); continue; }
+    if (p.x > f.x + EPS) fresh.push({ x: f.x, y: f.y, w: p.x - f.x, h: f.h });
+    if (px2 < fx2 - EPS) fresh.push({ x: px2, y: f.y, w: fx2 - px2, h: f.h });
+    if (p.y > f.y + EPS) fresh.push({ x: f.x, y: f.y, w: f.w, h: p.y - f.y });
+    if (py2 < fy2 - EPS) fresh.push({ x: f.x, y: py2, w: f.w, h: fy2 - py2 });
+  }
+  const base = keep.length;
+  for (let i = 0; i < fresh.length; i++) {
+    const a = fresh[i]; let inside = false;
+    for (let k = 0; k < base; k++) if (contains(keep[k], a)) { inside = true; break; }
+    if (!inside) for (let j = 0; j < fresh.length; j++) {
+      if (j === i) continue;
+      const b = fresh[j];
+      if (contains(b, a) && !(contains(a, b) && j > i)) { inside = true; break; }
+    }
+    if (!inside) keep.push(a);
+  }
+  bin.free = keep;
+  if (py2 > bin.top) bin.top = py2;
+}
+function minSideOf(ctx) {
+  if (ctx.minSide === undefined) { let m = Infinity; for (const it of ctx.insts) m = Math.min(m, it.ew, it.eh); ctx.minSide = m; }
+  return ctx.minSide;
+}
+function binFull(bin, ms) { for (const f of bin.free) if (f.w + EPS >= ms && f.h + EPS >= ms) return false; return true; }
+/* ---------- Guillotine mode (ctx.gl = { G, g, H, W } or null): across a straight cut the gap is g instead of G ---------- */
+// Real rects { x, y, w, h } split along axis ('y' = horizontal cuts, 'x' = vertical cuts) into groups separated by a band >= g.
+function glSplit(rects, axis, g) {
+  const y = axis === 'y', st = r => y ? r.y : r.x, en = r => y ? r.y + r.h : r.x + r.w;
+  const groups = [], bands = [];
+  if (!rects.length) return { groups, bands };
+  const s = rects.slice().sort((a, b) => st(a) - st(b));
+  let cur = [s[0]], end = en(s[0]);
+  for (let k = 1; k < s.length; k++) {
+    const r = s[k];
+    if (st(r) >= end + g - EPS) { groups.push(cur); bands.push({ lo: end, hi: st(r) }); cur = [r]; end = en(r); }
+    else { cur.push(r); end = Math.max(end, en(r)); }
+  }
+  groups.push(cur);
+  return { groups, bands };
+}
+// Cut tree: { axis, bands, kids } at a cut, { rects } at a leaf (no allowed cut).
+function glTree(rects, gl) {
+  if (rects.length >= 2) for (const axis of ['y', 'x']) {
+    if (axis === 'y' ? !gl.H : !gl.W) continue;
+    const s = glSplit(rects, axis, gl.g);
+    if (s.groups.length > 1) return { axis, bands: s.bands, kids: s.groups.map(gr => glTree(gr, gl)) };
+  }
+  return { rects };
+}
+function glLeaves(node, out) { if (node.kids) node.kids.forEach(k => glLeaves(k, out)); else for (const r of node.rects) out.push(r); return out; }
+function glRectsOf(items, ctx) {
+  return items.map(it => { const p = ctx.insts[it.i]; return { x: it.x, y: it.y, w: it.r ? p.h : p.w, h: it.r ? p.w : p.h, it }; });
+}
+// Pack the groups of every cut toward 0 (gap g between them), inner cuts first.
+function glPack(node, g) {
+  if (!node.kids) return;
+  const y = node.axis === 'y'; let end = -Infinity;
+  node.kids.forEach((kid, k) => {
+    glPack(kid, g);
+    const rs = glLeaves(kid, []); let lo = Infinity, hi = -Infinity;
+    for (const r of rs) { const a = y ? r.y : r.x, b = a + (y ? r.h : r.w); if (a < lo) lo = a; if (b > hi) hi = b; }
+    if (k > 0) { const sh = Math.max(0, lo - end - g); if (sh > 0) { for (const r of rs) { if (y) r.y -= sh; else r.x -= sh; } hi -= sh; } }
+    if (hi > end) end = hi;
+  });
+}
+// Compacts the items of one sheet in place; returns the new top = max(y + rh) + G.
+function glCompact(items, ctx) {
+  const rs = glRectsOf(items, ctx), gl = ctx.gl;
+  const tree = glTree(rs, gl);
+  if (tree.kids) glPack(tree, gl.g);
+  let top = 0;
+  for (const r of rs) { r.it.x = r.x; r.it.y = r.y; if (r.y + r.h > top) top = r.y + r.h; }
+  return top + gl.G;
+}
+function glLeafOk(rs, G) {
+  const s = rs.length > 2 ? rs.slice().sort((p, q) => p.x - q.x) : rs;
+  for (let i = 0; i < s.length; i++) for (let j = i + 1; j < s.length; j++) {
+    const a = s[i], b = s[j];
+    if (b.x - (a.x + a.w) >= G - EPS) break;
+    const dx = Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w), dy = Math.max(a.y, b.y) - Math.min(a.y + a.h, b.y + b.h);
+    if (Math.max(dx, dy) < G - EPS) return false;
+  }
+  return true;
+}
+function glNodeOk(node, gl) {
+  if (!node.kids) return glLeafOk(node.rects, gl.G);
+  return node.bands.every(b => b.hi - b.lo >= gl.g - EPS) && node.kids.every(k => glNodeOk(k, gl));
+}
+// Valid sheet: inside the real usable area, every leaf of the cut tree has gap G between all pairs.
+function glCheck(items, ctx, sz) {
+  sz = sz || ctx; const gl = ctx.gl, rs = glRectsOf(items, ctx), RW = sz.UW - gl.G, RH = sz.UH - gl.G;
+  for (const r of rs) if (r.x < -EPS || r.y < -EPS || r.x + r.w > RW + EPS || r.y + r.h > RH + EPS) return false;
+  return glNodeOk(glTree(rs, gl), gl);
+}
+function glBands(node, out) {
+  if (!node.kids) return out;
+  for (const b of node.bands) out.push({ y: node.axis === 'y', lo: b.lo, hi: b.hi });
+  node.kids.forEach(k => glBands(k, out));
+  return out;
+}
+// Finishes a sheet: compact, try to add the parts in `left` (tight gaps first, then safe G gaps), compact again.
+// The refill bins are built once; items do not move during the refill.
+// Leftovers are tried in a canonical order (real area desc, then index), so the result depends only on the bin
+// and the SET of leftovers: closeBin caches it per ctx (ctx.glCache, key = size + items + sorted leftovers).
+function closeBin(bin, left, ctx, sz) {
+  if (!left.length) return closeBinRaw(bin, left, ctx, sz);
+  const srt = left.slice().sort((a, b) => a - b);
+  let key = sz.UW + 'x' + sz.UH + '|';
+  for (const it of bin.items) key += it.i + ',' + it.x + ',' + it.y + ',' + (it.r ? 1 : 0) + ';';
+  key += '|' + srt.join(',');
+  const cache = ctx.glCache || (ctx.glCache = new Map());
+  let e = cache.get(key);
+  if (e) ctx.glHits = (ctx.glHits || 0) + 1;
+  else {
+    ctx.glMiss = (ctx.glMiss || 0) + 1;
+    const c = closeBinRaw(bin, left, ctx, sz);
+    if (cache.size >= 5000) cache.clear();
+    e = { items: c.items.map(it => ({ ...it })), top: c.top, left: c.left.slice(), area: c.area };
+    cache.set(key, e);
+  }
+  // rest keeps the caller's order of `left`
+  const lset = new Set(e.left);
+  return { items: e.items.map(it => ({ ...it })), top: e.top, left: left.filter(i => lset.has(i)), area: e.area };
+}
+function closeBinRaw(bin, left, ctx, sz) {
+  const gl = ctx.gl, G = gl.G, g = gl.g, items = bin.items, rest = [], failed = new Set();
+  let top = glCompact(items, ctx), area = 0, added = false;
+  if (left.length) {
+    left = left.slice().sort((a, b) => { const p = ctx.insts[a], q = ctx.insts[b]; return q.w * q.h - p.w * p.h || a - b; });
+    const rs = glRectsOf(items, ctx);
+    let free = (sz.UW - G) * (sz.UH - G);
+    for (const r of rs) free -= r.w * r.h;
+    let bands = null; const bins = [null, null];
+    const mkBin = pass => {
+      const d = pass ? G : g, bn = newBin(sz.UW - G + d, sz.UH - G + d);
+      for (const r of rs) placeRect(bn, { x: r.x, y: r.y, w: r.w + d, h: r.h + d });
+      return bn;
+    };
+    for (const i of left) {
+      const p = ctx.insts[i], key = p.w + 'x' + p.h;
+      if (failed.has(key) || p.w * p.h > free + EPS) { rest.push(i); continue; }
+      let put = false;
+      for (let pass = 0; pass < 2 && !put; pass++) {
+        const d = pass ? G : g;
+        if (!bins[pass]) bins[pass] = mkBin(pass);
+        const pos = findPos(bins[pass], p.w + d, p.h + d, ctx.rot);
+        if (!pos) continue;
+        const nr = { x: pos.x, y: pos.y, w: pos.r ? p.h : p.w, h: pos.r ? p.w : p.h };
+        // cheap test: >= G from every item and no band of the cut tree crossed => still valid
+        let ok = false, clear = true;
+        {
+          for (const r of rs) {
+            const dx = Math.max(r.x, nr.x) - Math.min(r.x + r.w, nr.x + nr.w), dy = Math.max(r.y, nr.y) - Math.min(r.y + r.h, nr.y + nr.h);
+            if (Math.max(dx, dy) < G - EPS) { clear = false; break; }
+          }
+          if (clear) {
+            if (!bands) bands = glBands(glTree(rs, gl), []);
+            ok = true;
+            for (const b of bands) { const a0 = b.y ? nr.y : nr.x, a1 = a0 + (b.y ? nr.h : nr.w); if (a1 > b.lo + EPS && a0 < b.hi - EPS) { ok = false; break; } }
+          }
+          if (!ok) { items.push({ i, x: pos.x, y: pos.y, r: pos.r }); ok = glCheck(items, ctx, sz); items.pop(); if (ok) bands = null; }
+        }
+        if (!ok) continue;
+        items.push({ i, x: pos.x, y: pos.y, r: pos.r }); rs.push(nr);
+        for (let q = 0; q < 2; q++) if (bins[q]) { const dq = q ? G : g; placeRect(bins[q], { x: nr.x, y: nr.y, w: nr.w + dq, h: nr.h + dq }); }
+        free -= p.w * p.h; put = true;
+      }
+      if (put) { added = true; area += p.ew * p.eh; } else { failed.add(key); rest.push(i); }
+    }
+  } else return { items, top, left: rest, area };
+  if (added) top = glCompact(items, ctx);
+  return { items, top, left: rest, area };
+}
+function packAll(order, ctx) {
+  let rem = order, sumTop = 0;
+  const sheets = [], ms = minSideOf(ctx);
+  while (rem.length) {
+    const bin = newBin(ctx.UW, ctx.UH), left = [];
+    let full = false;
+    for (let n = 0; n < rem.length; n++) {
+      const i = rem[n];
+      if (full) { left.push(i); continue; }
+      const it = ctx.insts[i];
+      const p = findPos(bin, it.ew, it.eh, ctx.rot);
+      if (p) { placeRect(bin, p); bin.items.push({ i, x: p.x, y: p.y, r: p.r }); full = binFull(bin, ms); } else left.push(i);
+    }
+    if (!bin.items.length) break;
+    if (ctx.gl) { const c = closeBin(bin, left, ctx, ctx); sheets.push({ items: c.items, top: c.top }); sumTop += c.top; rem = c.left; continue; }
+    sheets.push({ items: bin.items, top: bin.top });
+    sumTop += bin.top; rem = left;
+  }
+  return { sheets, score: sheets.length * 1e12 + sumTop };
+}
+// Score for the first search phase: fewest sheets, then the emptiest last sheet,
+// so the search keeps pushing parts off the lightest sheet until it can drop it.
+function emptyScore(r, ctx) {
+  const UA = ctx.UW * ctx.UH; let minA = Infinity;
+  for (const s of r.sheets) { let a = 0; for (const it of s.items) { const p = ctx.insts[it.i]; a += p.ew * p.eh; } if (a < minA) minA = a; }
+  return r.sheets.length * 1e12 + (minA / UA) * 1e9;
+}
+function packOne(order, ctx, si) {
+  const sz = si === undefined ? ctx : ctx.sizes[si], bin = newBin(sz.UW, sz.UH), miss = [];
+  for (const i of order) {
+    const it = ctx.insts[i];
+    const p = findPos(bin, it.ew, it.eh, ctx.rot);
+    if (!p) { if (!ctx.gl) return null; miss.push(i); continue; }
+    placeRect(bin, p); bin.items.push({ i, x: p.x, y: p.y, r: p.r });
+  }
+  if (ctx.gl) {
+    if (!bin.items.length) return null;
+    const c = closeBin(bin, miss, ctx, sz);
+    return c.left.length ? null : { items: c.items, top: c.top };
+  }
+  return { items: bin.items, top: bin.top };
+}
+/* Several sheet sizes: each new sheet is filled on every allowed size and the rule picks one.
+   The search minimises the total reduced-sheet area (ctx.cost). */
+function fillBin(rem, ctx, sz, ms) {
+  const bin = newBin(sz.UW, sz.UH), left = []; let full = false, area = 0;
+  for (let n = 0; n < rem.length; n++) {
+    const i = rem[n];
+    if (full) { left.push(i); continue; }
+    const it = ctx.insts[i], p = findPos(bin, it.ew, it.eh, ctx.rot);
+    if (p) { placeRect(bin, p); bin.items.push({ i, x: p.x, y: p.y, r: p.r }); area += it.ew * it.eh; full = binFull(bin, ms); } else left.push(i);
+  }
+  if (ctx.gl && bin.items.length) { const c = closeBin(bin, left, ctx, sz); bin.items = c.items; bin.top = c.top; return { bin, left: c.left, area: area + c.area }; }
+  return { bin, left, area };
+}
+function sizeRules(ctx) { return ['eff', 0.85, 0.7].concat(ctx.sizes.map((_, i) => ({ only: i }))); }
+function packMulti(order, ctx, rule) {
+  let rem = order, total = 0;
+  const sheets = [], ms = minSideOf(ctx);
+  while (rem.length) {
+    let pick = null;
+    const tryRule = ru => {
+      let pv = Infinity;
+      ctx.sizes.forEach((sz, si) => {
+        if (typeof ru === 'object' && ru.only !== si) return;
+        const f = fillBin(rem, ctx, sz, ms); if (!f.bin.items.length) return;
+        const c = ctx.cost(si, f.bin.top);
+        const v = typeof ru === 'object' ? 0 : ru === 'eff' ? -f.area / c : c - f.area / ru;
+        if (v < pv) { pv = v; pick = { si, f, c }; }
+      });
+    };
+    tryRule(rule);
+    if (!pick && typeof rule === 'object') tryRule('eff');
+    if (!pick) { total += rem.length * 1e15; break; }
+    sheets.push({ si: pick.si, items: pick.f.bin.items, top: pick.f.bin.top });
+    total += pick.c; rem = pick.f.left;
+  }
+  return { sheets, score: total + sheets.length * (ctx.sheetPen || 1) };
+}
+function sheetFill(ctx, s) { let a = 0; for (const it of s.items) { const p = ctx.insts[it.i]; a += p.ew * p.eh; } return a / ctx.cost(s.si, s.top); }
+function randOrder(ids, ctx) {
+  if (Math.random() < 0.35) return shuffled(ids);
+  const key = new Map(ids.map(i => [i, ctx.insts[i].ew * ctx.insts[i].eh * (0.6 + Math.random() * 0.8)]));
+  return ids.slice().sort((a, b) => key.get(b) - key.get(a));
+}
+// Several sizes, second half of the search: take one of the emptiest sheets plus one or two others,
+// re-nest all their parts together on any allowed sizes, and keep the result if the score
+// (material + sheet-count penalty) goes down.
+// This is what merges two half-empty sheets into one, or swaps a large sheet for a smaller one.
+function repackMove(best, ctx, rules) {
+  const sh = best.sheets, n = sh.length; if (n < 2) return;
+  let lo = rnd(n), lf = sheetFill(ctx, sh[lo]);
+  for (let t = 0; t < 2; t++) { const i = rnd(n), f = sheetFill(ctx, sh[i]); if (f < lf) { lo = i; lf = f; } }
+  const pick = new Set([lo]), k = n >= 3 && Math.random() < 0.3 ? 3 : 2;
+  while (pick.size < k) pick.add(rnd(n));
+  const ids = []; let old = 0;
+  pick.forEach(i => { sh[i].items.forEach(it => ids.push(it.i)); old += ctx.cost(sh[i].si, sh[i].top); });
+  const r = packMulti(randOrder(ids, ctx), ctx, rules[rnd(rules.length)]);
+  if (r.score >= 1e15) return;
+  let nc = 0; for (const x of r.sheets) nc += ctx.cost(x.si, x.top);
+  const pen = ctx.sheetPen || 1;
+  if (nc + r.sheets.length * pen < old + pick.size * pen - EPS) {
+    best.sheets = sh.filter((_, i) => !pick.has(i)).concat(r.sheets);
+    let tot = 0; for (const x of best.sheets) tot += ctx.cost(x.si, x.top);
+    best.score = tot + best.sheets.length * pen;
+  }
+}
+// Several sizes: empty the sparsest of 3 random sheets by putting each of its parts (largest first) onto
+// another sheet. Applied only if the total score (material + sheet-count penalty) goes down.
+function dropSheetMove(best, ctx) {
+  const sh = best.sheets, n = sh.length; if (n < 2) return;
+  let v = rnd(n), vf = sheetFill(ctx, sh[v]);
+  for (let t = 0; t < 2; t++) { const i = rnd(n), f = sheetFill(ctx, sh[i]); if (f < vf) { v = i; vf = f; } }
+  const area = i => ctx.insts[i].ew * ctx.insts[i].eh;
+  const work = sh.slice(), parts = sh[v].items.map(it => it.i).sort((a, b) => area(b) - area(a));
+  const others = []; for (let i = 0; i < n; i++) if (i !== v) others.push(i);
+  for (const p of parts) {
+    let placed = false;
+    for (const k of shuffled(others)) {
+      const s = work[k], ids = s.items.map(it => it.i).concat(p);
+      const r = packOne(ids.slice().sort((a, b) => area(b) - area(a)), ctx, s.si) || packOne(randOrder(ids, ctx), ctx, s.si);
+      if (r) { work[k] = { si: s.si, items: r.items, top: r.top }; placed = true; break; }
+    }
+    if (!placed) return;
+  }
+  const ns = work.filter((_, i) => i !== v);
+  let tot = ns.length * (ctx.sheetPen || 1); for (const x of ns) tot += ctx.cost(x.si, x.top);
+  if (tot < best.score - EPS) { best.sheets = ns; best.score = tot; }
+}
+// A one-size layout (result of packAll on a sub-context) as a layout on the multi-size context.
+function toMulti(r, si, ctx) {
+  let tot = 0, placed = 0;
+  const sheets = r.sheets.map(s => { tot += ctx.cost(si, s.top); placed += s.items.length; return { si, items: s.items, top: s.top }; });
+  return { sheets, score: tot + sheets.length * ctx.sheetPen + (ctx.insts.length - placed) * 1e15 };
+}
+const rnd = n => Math.floor(Math.random() * n);
+function mutate(order) {
+  const a = order.slice(), n = a.length;
+  if (n < 2) return a;
+  const m = Math.random();
+  if (m < 0.55) { const k = 1 + rnd(3); for (let s = 0; s < k; s++) { const i = rnd(n), j = rnd(n); const t = a[i]; a[i] = a[j]; a[j] = t; } }
+  else if (m < 0.9) { const i = rnd(n), j = rnd(n); const [x] = a.splice(i, 1); a.splice(j, 0, x); }
+  else { let i = rnd(n), j = rnd(n); if (i > j) [i, j] = [j, i]; const seg = a.slice(i, j + 1).reverse(); a.splice(i, seg.length, ...seg); }
+  return a;
+}
+function seedOrders(ctx) {
+  const idx = ctx.insts.map((_, i) => i), I = ctx.insts;
+  const by = f => idx.slice().sort((a, b) => f(I[b]) - f(I[a]) || I[b].w * I[b].h - I[a].w * I[a].h);
+  return [
+    by(p => p.w * p.h), by(p => Math.max(p.w, p.h)), by(p => p.h), by(p => p.w),
+    by(p => p.w + p.h), by(p => Math.min(p.w, p.h))
+  ];
+}
+function noisyOrder(ctx) {
+  const I = ctx.insts;
+  const key = I.map(p => p.w * p.h * (0.7 + Math.random() * 0.6));
+  return I.map((_, i) => i).sort((a, b) => key[b] - key[a]);
+}
+function shuffled(a) { const b = a.slice(); for (let i = b.length - 1; i > 0; i--) { const j = rnd(i + 1); [b[i], b[j]] = [b[j], b[i]]; } return b; }
+// Height of the sheet after cutting off the unused top: rounded up to a step, full size if the offcut is too small.
+function reducedH(H, realTop, S, E) {
+  let hRed = Math.ceil((realTop + E.t) * 10 - 1e-6) / 10;
+  if (S.step > 0) hRed = Math.ceil(hRed / S.step - 1e-9) * S.step;
+  hRed = Math.min(H, hRed);
+  let full = false;
+  if (S.minOff > 0 && hRed < H && H - hRed < S.minOff - 1e-9) { hRed = H; full = true; }
+  return { hRed, full };
+}
+/* ---------- Search state and loop (one group = one material) ---------- */
+function initGroup(ctx) {
+  if (ctx.sizes.length === 1) {
+    let best = null, bestOrder = null;
+    for (const o of seedOrders(ctx)) { const r = packAll(o, ctx); if (!best || r.score < best.score) { best = r; bestOrder = o; } }
+    return { best, bestOrder, cur: best, curOrder: bestOrder, curS: emptyScore(best, ctx), phase: true, refineIdx: 0 };
+  }
+  // Several sizes: a sheet-count penalty (0,5 % of the blank area per sheet), and a start from the best
+  // one-size layout on each size, so the result is never worse than those one-size layouts.
+  // rules[3 + i] is the { only: i } rule: sizeRules lists 'eff', 0.85, 0.7 first.
+  ctx.sheetPen = 0.005 * ctx.insts.reduce((s, p) => s + p.ew * p.eh, 0);
+  const rules = sizeRules(ctx), seeds = seedOrders(ctx), sub = [];
+  let best = null, bestOrder = null, rule = rules[0];
+  const consider = (r, o, ru) => { if (!best || r.score < best.score) { best = r; bestOrder = o; rule = ru; } };
+  ctx.sizes.forEach((sz, i) => {
+    const sc = { insts: ctx.insts, UW: sz.UW, UH: sz.UH, rot: ctx.rot, sizes: [sz], gl: ctx.gl };
+    // a size is usable alone only if every part fits on it
+    const ok = ctx.insts.every(p => (p.ew <= sz.UW + EPS && p.eh <= sz.UH + EPS) || (ctx.rot && p.eh <= sz.UW + EPS && p.ew <= sz.UH + EPS));
+    const s = { ctx: sc, best: null, bestOrder: null, ok };
+    if (ok) {
+      for (const o of seeds) { const r = packAll(o, sc); if (!s.best || r.score < s.best.score) { s.best = r; s.bestOrder = o; } }
+      consider(toMulti(s.best, i, ctx), s.bestOrder, rules[3 + i]);
+    }
+    sub.push(s);
+  });
+  for (const o of seeds) for (const ru of rules) consider(packMulti(o, ctx, ru), o, ru);
+  return { best, bestOrder, rule, rules, sub, subIdx: 0, refineIdx: 0 };
+}
+// One search iteration for one group. frac = elapsed / budget (0..1).
+// Several sizes: search phases end at these fractions of the time budget; probabilities of the end-phase moves (rest = refine)
+const PH_ONE = 0.05, PH_ORDER = 0.5, P_REPACK = 0.8, P_DROP = 0.05;
+function searchStep(g, ctx, frac) {
+  const multi = ctx.sizes.length > 1;
+  if (multi && frac < PH_ONE && g.sub.some(s => s.ok)) {
+    // Several sizes, start: improve the one-size layouts, each size in turn
+    let i; do { i = g.subIdx++ % g.sub.length; } while (!g.sub[i].ok);
+    const s = g.sub[i], cand = Math.random() < 0.06 ? noisyOrder(s.ctx) : mutate(s.bestOrder);
+    const r = packAll(cand, s.ctx);
+    if (r.score <= s.best.score + EPS) {
+      s.best = r; s.bestOrder = cand;
+      const m = toMulti(r, i, ctx);
+      if (m.score < g.best.score - EPS) { g.best = m; g.bestOrder = cand; g.rule = g.rules[3 + i]; }
+    }
+  } else if (multi && frac >= PH_ORDER) {
+    // Several sizes, end: merge, drop and repack sheets, and re-nest single sheets
+    const x = Math.random();
+    if (x < P_REPACK) repackMove(g.best, ctx, g.rules);
+    else if (x < P_REPACK + P_DROP) dropSheetMove(g.best, ctx);
+    else searchRefine(g, ctx);
+  } else if (multi) {
+    // Several sizes, middle: change the part order, and now and then the rule that picks each sheet's size
+    const cand = Math.random() < 0.06 ? noisyOrder(ctx) : mutate(g.bestOrder);
+    const ru = Math.random() < 0.1 ? g.rules[rnd(g.rules.length)] : g.rule;
+    const r = packMulti(cand, ctx, ru);
+    if (r.score <= g.best.score + EPS) { g.best = r; g.bestOrder = cand; g.rule = ru; }
+  } else if (!multi && frac < 0.75) {
+    // Phase 1 (first half): reduce the sheet count. Phase 1b: lower the total used height.
+    const pe = frac < 0.5;
+    if (pe !== g.phase) { g.phase = pe; g.cur = g.best; g.curOrder = g.bestOrder; g.curS = pe ? emptyScore(g.best, ctx) : g.best.score; }
+    const cand = Math.random() < 0.06 ? noisyOrder(ctx) : mutate(g.curOrder);
+    const r = packAll(cand, ctx), sc = pe ? emptyScore(r, ctx) : r.score;
+    if (sc <= g.curS + EPS) { g.cur = r; g.curOrder = cand; g.curS = sc; }
+    if (r.score < g.best.score - EPS || (!pe && r.score <= g.best.score + EPS)) { g.best = r; g.bestOrder = cand; }
+  } else if (g.best.sheets.length) {
+    searchRefine(g, ctx);
+  }
+}
+// Re-nest one sheet on its own to push its top edge down (several sizes: on its own or another allowed size).
+function searchRefine(g, ctx) {
+  const sheets = g.best.sheets;
+  if (!sheets.length) return;
+  const k = g.refineIdx++ % sheets.length, sh = sheets[k];
+  const order = randOrder(sh.items.map(it => it.i), ctx);
+  if (ctx.sizes.length > 1) {
+    const si = Math.random() < 0.5 ? sh.si : rnd(ctx.sizes.length);
+    const r = packOne(order, ctx, si);
+    if (r) { const c0 = ctx.cost(sh.si, sh.top), c1 = ctx.cost(si, r.top); if (c1 < c0 - EPS) { sheets[k] = { si, ...r }; g.best.score -= c0 - c1; } }
+  } else {
+    const r = packOne(order, ctx);
+    if (r && r.top < sh.top - EPS) sheets[k] = r;
+  }
+}
+</script>
+
+<script id="docx">
+/* ---------- Word (.docx) writer: ZIP (stored) + WordprocessingML helpers. No DOM. ---------- */
+var CRC_TABLE = null;
+function crc32(u8) {
+  if (!CRC_TABLE) {
+    CRC_TABLE = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; CRC_TABLE[n] = c >>> 0; }
+  }
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function zipStore(files) {
+  const enc = new TextEncoder(), d = new Date();
+  const dosT = ((d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1)) & 0xFFFF;
+  const dosD = ((((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate())) & 0xFFFF;
+  const ents = files.map(f => {
+    const data = typeof f.data === 'string' ? enc.encode(f.data) : f.data;
+    return { name: enc.encode(f.name), data, crc: crc32(data) };
+  });
+  let size = 22, off = 0;
+  ents.forEach(e => { size += 30 + e.name.length + e.data.length + 46 + e.name.length; });
+  const out = new Uint8Array(size), v = new DataView(out.buffer);
+  let p = 0;
+  const u16 = x => { v.setUint16(p, x, true); p += 2; };
+  const u32 = x => { v.setUint32(p, x, true); p += 4; };
+  ents.forEach(e => {
+    e.off = p;
+    u32(0x04034b50); u16(20); u16(0x0800); u16(0); u16(dosT); u16(dosD); u32(e.crc); u32(e.data.length); u32(e.data.length); u16(e.name.length); u16(0);
+    out.set(e.name, p); p += e.name.length;
+    out.set(e.data, p); p += e.data.length;
+  });
+  const cd = p;
+  ents.forEach(e => {
+    u32(0x02014b50); u16(20); u16(20); u16(0x0800); u16(0); u16(dosT); u16(dosD); u32(e.crc); u32(e.data.length); u32(e.data.length);
+    u16(e.name.length); u16(0); u16(0); u16(0); u16(0); u32(0); u32(e.off);
+    out.set(e.name, p); p += e.name.length;
+  });
+  const cdSize = p - cd;
+  u32(0x06054b50); u16(0); u16(0); u16(ents.length); u16(ents.length); u32(cdSize); u32(cd); u16(0);
+  return out;
+}
+function xe(s) {
+  return String(s).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function wRpr(o) {
+  let p = '';
+  if (o.b) p += '<w:b/><w:bCs/>'; else if (o.b === false) p += '<w:b w:val="0"/><w:bCs w:val="0"/>';
+  if (o.color) p += `<w:color w:val="${o.color}"/>`;
+  if (o.spacing) p += `<w:spacing w:val="${Math.round(o.spacing * 20)}"/>`;
+  if (o.sz) { const h = Math.round(o.sz * 2); p += `<w:sz w:val="${h}"/><w:szCs w:val="${h}"/>`; }
+  if (o.bdr) p += `<w:bdr w:val="single" w:sz="4" w:space="0" w:color="${o.bdr}"/>`;
+  if (o.shd) p += `<w:shd w:val="clear" w:color="auto" w:fill="${o.shd}"/>`;
+  return p ? `<w:rPr>${p}</w:rPr>` : '';
+}
+function wRun(text, o = {}) {
+  const t = String(text).split('\n').map(x => `<w:t xml:space="preserve">${xe(x)}</w:t>`).join('<w:br/>');
+  return `<w:r>${wRpr(o)}${t}</w:r>`;
+}
+function wPara(runsXml, o = {}) {
+  let p = '';
+  if (o.style) p += `<w:pStyle w:val="${o.style}"/>`;
+  if (o.keepNext) p += '<w:keepNext/>';
+  if (o.pageBreak) p += '<w:pageBreakBefore/>';
+  if (o.before != null || o.after != null) p += `<w:spacing${o.before != null ? ` w:before="${Math.round(o.before * 20)}"` : ''}${o.after != null ? ` w:after="${Math.round(o.after * 20)}"` : ''}/>`;
+  if (o.al) p += `<w:jc w:val="${o.al}"/>`;
+  return `<w:p>${p ? `<w:pPr>${p}</w:pPr>` : ''}${runsXml}</w:p>`;
+}
+function wTable(rows, o = {}) {
+  const n = rows.length && rows[0].cells.length;
+  const widths = o.widths || Array.from({ length: n }, () => Math.round(9864 / n));
+  let t = '<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblLayout w:type="autofit"/><w:tblCellMar><w:top w:w="60" w:type="dxa"/><w:left w:w="120" w:type="dxa"/><w:bottom w:w="60" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>';
+  t += widths.map(w => `<w:gridCol w:w="${w}"/>`).join('') + '</w:tblGrid>';
+  rows.forEach(r => {
+    t += '<w:tr>';
+    if (r.cantSplit || r.header) t += `<w:trPr>${r.cantSplit ? '<w:cantSplit/>' : ''}${r.header ? '<w:tblHeader/>' : ''}</w:trPr>`;
+    r.cells.forEach(c => {
+      let pr = '<w:tcW w:w="0" w:type="auto"/>';
+      if (c.span > 1) pr += `<w:gridSpan w:val="${c.span}"/>`;
+      if (c.borders) {
+        const b = ['top', 'left', 'bottom', 'right'].filter(s => c.borders[s]).map(s => `<w:${s} w:val="single" w:sz="${Math.round(c.borders[s][0] * 8)}" w:space="0" w:color="${c.borders[s][1]}"/>`).join('');
+        if (b) pr += `<w:tcBorders>${b}</w:tcBorders>`;
+      }
+      if (c.fill) pr += `<w:shd w:val="clear" w:color="auto" w:fill="${c.fill}"/>`;
+      if (c.vAlign) pr += `<w:vAlign w:val="${c.vAlign}"/>`;
+      const xml = c.xml || '';
+      t += `<w:tc><w:tcPr>${pr}</w:tcPr>${xml.includes('<w:p') ? xml : xml + '<w:p/>'}</w:tc>`;
+    });
+    t += '</w:tr>';
+  });
+  return t + '</w:tbl><w:p><w:pPr><w:spacing w:after="0"/><w:rPr><w:sz w:val="12"/></w:rPr></w:pPr></w:p>';
+}
+function wImage(rId, id, cx, cy, name) {
+  return `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="${id}" name="${xe(name)}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="${xe(name)}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+}
+function wField(code, o = {}) {
+  const rp = wRpr(o);
+  return `<w:r>${rp}<w:fldChar w:fldCharType="begin"/></w:r><w:r>${rp}<w:instrText xml:space="preserve"> ${code} </w:instrText></w:r><w:r>${rp}<w:fldChar w:fldCharType="separate"/></w:r><w:r>${rp}<w:t>1</w:t></w:r><w:r>${rp}<w:fldChar w:fldCharType="end"/></w:r>`;
+}
+function buildDocx({ body, images, title, footer, created }) {
+  const X = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  const NS = 'http://schemas.openxmlformats.org/', RT = NS + 'officeDocument/2006/relationships/';
+  const W = `xmlns:w="${NS}wordprocessingml/2006/main"`, Rn = `xmlns:r="${NS}officeDocument/2006/relationships"`;
+  const WML = 'application/vnd.openxmlformats-officedocument.wordprocessingml.';
+  images = images || [];
+  const rels = `${X}<Relationships xmlns="${NS}package/2006/relationships">`;
+  const ctypes = `${X}<Types xmlns="${NS}package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/>` +
+    `<Override PartName="/word/document.xml" ContentType="${WML}document.main+xml"/><Override PartName="/word/styles.xml" ContentType="${WML}styles+xml"/><Override PartName="/word/settings.xml" ContentType="${WML}settings+xml"/><Override PartName="/word/footer1.xml" ContentType="${WML}footer+xml"/>` +
+    `<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`;
+  const rootRels = `${rels}<Relationship Id="rId1" Type="${RT}officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="${NS}package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="${RT}extended-properties" Target="docProps/app.xml"/></Relationships>`;
+  const docRels = `${rels}<Relationship Id="rIdStyles" Type="${RT}styles" Target="styles.xml"/><Relationship Id="rIdSettings" Type="${RT}settings" Target="settings.xml"/><Relationship Id="rIdFooter" Type="${RT}footer" Target="footer1.xml"/>` +
+    images.map((im, i) => `<Relationship Id="rIdImg${i + 1}" Type="${RT}image" Target="media/image${i + 1}.png"/>`).join('') + '</Relationships>';
+  const document = `${X}<w:document ${W} ${Rn} xmlns:wp="${NS}drawingml/2006/wordprocessingDrawing" xmlns:a="${NS}drawingml/2006/main" xmlns:pic="${NS}drawingml/2006/picture"><w:body>${body}<w:p/><w:sectPr><w:footerReference w:type="default" r:id="rIdFooter"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1021" w:right="1021" w:bottom="1021" w:left="1021" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+  const styles = `${X}<w:styles ${W}><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="Arial" w:cs="Arial"/><w:color w:val="1B2633"/><w:sz w:val="18"/><w:szCs w:val="18"/><w:lang w:val="en-GB"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>` +
+    `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>` +
+    `<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="9"/><w:qFormat/><w:pPr><w:keepNext/><w:pBdr><w:bottom w:val="single" w:sz="12" w:space="4" w:color="1F47C9"/></w:pBdr><w:spacing w:before="360" w:after="160"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:bCs/><w:sz w:val="26"/><w:szCs w:val="26"/></w:rPr></w:style>` +
+    `<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/><w:uiPriority w:val="99"/><w:semiHidden/><w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style></w:styles>`;
+  const settings = `${X}<w:settings ${W}><w:defaultTabStop w:val="708"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>`;
+  const fo = { sz: 8, color: '5B6676' };
+  const ftr = `${X}<w:ftr ${W} ${Rn}>${wPara(wRun(footer + ' · Page ', fo) + wField('PAGE', fo) + wRun(' of ', fo) + wField('NUMPAGES', fo), { al: 'right' })}</w:ftr>`;
+  const core = `${X}<cp:coreProperties xmlns:cp="${NS}package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${xe(title)}</dc:title><dc:creator>Sheet Nesting Planner</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${xe(created)}</dcterms:created></cp:coreProperties>`;
+  const app = `${X}<Properties xmlns="${NS}officeDocument/2006/extended-properties"><Application>Sheet Nesting Planner</Application></Properties>`;
+  const files = [
+    { name: '[Content_Types].xml', data: ctypes }, { name: '_rels/.rels', data: rootRels },
+    { name: 'word/document.xml', data: document }, { name: 'word/_rels/document.xml.rels', data: docRels },
+    { name: 'word/styles.xml', data: styles }, { name: 'word/settings.xml', data: settings }, { name: 'word/footer1.xml', data: ftr },
+    { name: 'docProps/core.xml', data: core }, { name: 'docProps/app.xml', data: app }
+  ];
+  images.forEach((im, i) => files.push({ name: `word/media/image${i + 1}.png`, data: im.bytes }));
+  return zipStore(files);
+}
+</script>
+
+<script>
+/* ---------- Formatting (Slovenian: 1.234,56) ---------- */
+function fmt(n, d = 2) {
+  if (!isFinite(n)) return '–';
+  const neg = n < -1e-12;
+  let [i, f] = Math.abs(n).toFixed(d).split('.');
+  i = i.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return (neg ? '−' : '') + i + (f ? ',' + f : '');
+}
+const dim = n => fmt(n, Math.abs(n - Math.round(n)) < 1e-6 ? 0 : 1);
+const m2 = mm2 => mm2 / 1e6;
+const tsv = (n, d) => isFinite(n) ? n.toFixed(d).replace('.', ',') : '';
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const inVal = n => isFinite(n) ? String(+n.toFixed(3)).replace('.', ',') : '';
+
+/* ---------- Version and changelog ---------- */
+const CHANGELOG = (document.getElementById('changelog') || {}).textContent || '';
+const APP_VERSION = (/^## (\d+\.\d+\.\d+)/m.exec(CHANGELOG) || [])[1] || '';
+function mdToHTML(md) {
+  const inl = t => t.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+  const out = []; let list = false, para = [];
+  const flushP = () => { if (para.length) out.push('<p>' + inl(para.join(' ')) + '</p>'); para = []; };
+  const flushL = () => { if (list) out.push('</ul>'); list = false; };
+  esc(md).replace(/\r\n?/g, '\n').split('\n').forEach(line => {
+    let m;
+    if (!line.trim()) { flushP(); flushL(); }
+    else if (/^# /.test(line)) { flushP(); flushL(); }
+    else if ((m = /^(##|###) (.*)$/.exec(line))) { flushP(); flushL(); const t = m[1] === '##' ? 'h3' : 'h4'; out.push('<' + t + '>' + inl(m[2]) + '</' + t + '>'); }
+    else if ((m = /^- (.*)$/.exec(line))) { flushP(); if (!list) { out.push('<ul>'); list = true; } out.push('<li>' + inl(m[1]) + '</li>'); }
+    else { flushL(); para.push(line.trim()); }
+  });
+  flushP(); flushL();
+  return out.join('\n');
+}
+function today() { const d = new Date(); return String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + d.getFullYear(); }
+
+function parseNum(v, mode) {
+  if (typeof v === 'number') return v;
+  if (v == null) return NaN;
+  let s = String(v).trim().replace(/[\s ]/g, '').replace(/mm$/i, '');
+  if (!s) return NaN;
+  if (mode === 'xml') { if (!s.includes('.')) s = s.replace(',', '.'); return Number(s); }
+  if (s.includes(',') && s.includes('.')) {
+    s = s.lastIndexOf(',') > s.lastIndexOf('.') ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+  } else if (s.includes(',')) s = s.replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  return Number(s);
+}
+
+/* ---------- State ---------- */
+const $ = s => document.querySelector(s);
+const SAMPLE = [
+  { id: 'Side panel', w: 1180, h: 640, qty: 4 },
+  { id: 'Top cover', w: 1420, h: 520, qty: 2 },
+  { id: 'Door', w: 760, h: 590, qty: 3 },
+  { id: 'Base plate', w: 980, h: 450, qty: 2 },
+  { id: 'Bracket', w: 260, h: 140, qty: 12 },
+  { id: 'Rail', w: 1900, h: 90, qty: 6 },
+  { id: 'Filter frame', w: 540, h: 330, qty: 6 },
+  { id: 'Drip tray', w: 820, h: 310, qty: 2 },
+  { id: 'Mounting plate', w: 380, h: 280, qty: 5 }
+];
+let parts = [], srcName = '';
+let job = null, lastResult = null, isSample = false;
+
+function showErr(t) { const e = $('#err'); e.textContent = t || ''; e.hidden = !t; }
+function markStale() { if (job) job.dirty = true; if (lastResult) $('#stale').hidden = false; }
+
+/* ---------- Parts table ---------- */
+function renderParts() {
+  if (!parts.length) { $('#partsBody').innerHTML = '<tr><td class="none" colspan="8">No parts yet. Load a file, add a part, or load the example parts.</td></tr>'; partsSummary(); renderTypes(); renderMats(); markLimits(); return; }
+  $('#partsBody').innerHTML = parts.map((p, i) => `<tr data-i="${i}">
+    <td><span class="sw c${i % 8}"></span></td>
+    <td><input id="pn${i}" data-k="id" value="${esc(p.id)}" aria-label="Part name"></td>
+    <td class="tcell">${p.type ? `<span class="tbadge">${esc(p.type)}</span>` : ''}</td>
+    <td class="mcell">${p.mat ? `<span class="tbadge mat">${esc(p.mat)}</span>` : ''}</td>
+    <td><input id="pw${i}" data-k="w" class="num${p.w > 0 ? '' : ' bad'}" inputmode="decimal" value="${inVal(p.w)}" aria-label="Width in mm"></td>
+    <td><input id="ph${i}" data-k="h" class="num${p.h > 0 ? '' : ' bad'}" inputmode="decimal" value="${inVal(p.h)}" aria-label="Height in mm"></td>
+    <td><input id="pq${i}" data-k="qty" class="num${p.qty > 0 ? '' : ' bad'}" inputmode="numeric" value="${isFinite(p.qty) ? p.qty : ''}" aria-label="Quantity"></td>
+    <td><button class="x" type="button" data-del="${i}" aria-label="Remove ${esc(p.id)}">×</button></td></tr>`).join('');
+  partsSummary();
+  renderTypes();
+  renderMats();
+  markLimits();
+}
+/* ---------- Part size limits (blank size, either orientation) ---------- */
+function readLim() { const v = id => { const n = parseNum($('#' + id).value); return n > 0 ? n : 0; }; return { W: v('limW'), H: v('limH'), D: v('limD') }; }
+const hasLim = L => L.W > 0 || L.H > 0 || L.D > 0;
+const limTxt = L => hasLim(L) ? [L.W || L.H ? `${L.W ? dim(L.W) : 'any'} × ${L.H ? dim(L.H) : 'any'} mm` : '', L.D ? `diagonal ${dim(L.D)} mm` : ''].filter(Boolean).join(', ') : 'None';
+function overLimit(w, h, L) {
+  const MW = L.W || Infinity, MH = L.H || Infinity, why = [];
+  if (!((w <= MW + EPS && h <= MH + EPS) || (h <= MW + EPS && w <= MH + EPS))) why.push(`${dim(w)} × ${dim(h)} mm is over ${L.W ? dim(L.W) : 'any'} × ${L.H ? dim(L.H) : 'any'} mm`);
+  const d = Math.hypot(w, h);
+  if (L.D && d > L.D + EPS) why.push(`diagonal ${fmt(d, 1)} mm is over ${dim(L.D)} mm`);
+  return why.join('; ');
+}
+function markLimits() {
+  const L = readLim(), on = hasLim(L), over = [];
+  document.querySelectorAll('#partsBody tr[data-i]').forEach(tr => {
+    const p = parts[+tr.dataset.i]; if (!p) return;
+    const b = blankOf(p), why = on && p.w > 0 && p.h > 0 ? overLimit(b.w, b.h, L) : '';
+    tr.classList.toggle('over', !!why); tr.title = why ? 'Over the part size limits: ' + why : '';
+    if (why) over.push(p);
+  });
+  const m = $('#limMsg'); m.hidden = !over.length;
+  m.textContent = over.length ? `${over.length} part type${over.length > 1 ? 's are' : ' is'} over the part size limits and will be left out: ${over.map(p => p.id).join(', ')}. Point at a red row to see why.` : '';
+}
+['limW', 'limH', 'limD'].forEach(id => $('#' + id).addEventListener('input', () => { markLimits(); markStale(); }));
+function partsSummary() {
+  const ok = parts.filter(p => p.w > 0 && p.h > 0 && p.qty > 0);
+  const n = ok.reduce((s, p) => s + p.qty, 0), a = ok.reduce((s, p) => s + p.w * p.h * p.qty, 0);
+  if (!parts.length) { $('#psum').textContent = ''; return; }
+  $('#psum').textContent = `${parts.length} types · ${fmt(n, 0)} pcs · ${fmt(m2(a), 2)} m²` + (isSample ? ' · example' : '');
+}
+$('#partsBody').addEventListener('input', e => {
+  const t = e.target, k = t.dataset.k; if (!k) return;
+  const i = +t.closest('tr').dataset.i;
+  if (k === 'id') parts[i].id = t.value;
+  else { let v = parseNum(t.value); if (k === 'qty') v = Math.round(v); parts[i][k] = v; t.classList.toggle('bad', !(v > 0)); if (k === 'qty') { renderTypes(); renderMats(); } else markLimits(); }
+  markStale(); partsSummary();
+});
+$('#partsBody').addEventListener('click', e => {
+  const b = e.target.closest('[data-del]'); if (!b) return;
+  parts.splice(+b.dataset.del, 1); renderParts(); markStale();
+});
+$('#addPart').onclick = () => {
+  parts.push({ id: 'Part ' + (parts.length + 1), w: 500, h: 300, qty: 1 }); renderParts(); markStale();
+  const el = document.getElementById('pn' + (parts.length - 1)); el && el.focus();
+};
+/* ---------- Example Excel files ---------- */
+const EXAMPLES = {
+  ahu: { file: 'nesting-example-ahu-en.csv', head: ['Part', 'Width (mm)', 'Height (mm)', 'Qty'], rows: () => SAMPLE.map(p => [p.id, p.w, p.h, p.qty]) },
+  slo: { file: 'nesting-primer-ahu-sl.csv', head: ['Naziv', 'Širina (mm)', 'Višina (mm)', 'Količina'], rows: () => [
+    ['Stranica', 1180, 640, 4], ['Pokrov', 1420, 520, 2], ['Vrata', 760, 590, 3], ['Dno', 980, 450, 2],
+    ['Nosilec', 260, 140, 12], ['Letev', 1900, 90, 6], ['Okvir filtra', 540, 330, 6], ['Kadica', 820, 310, 2], ['Montažna plošča', 380, 280, 5]] },
+  bare: { file: 'nesting-example-no-header.csv', head: null, rows: () => [
+    ['P-101', 1200, 600, 3], ['P-102', 900, 450, 4], ['P-103', 640, 320, 8], ['P-104', 2100, 150, 4], ['P-105', 300, 200, 10]] },
+  large: { file: 'nesting-example-large.csv', head: ['ID', 'Width', 'Height', 'Quantity'], rows: () => {
+    let s = 20261024; const r = () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const out = [];
+    for (let i = 1; i <= 30; i++) {
+      const big = r() < 0.3, w = Math.round((big ? 700 + r() * 1500 : 120 + r() * 600) / 5) * 5;
+      const h = Math.round((big ? 300 + r() * 600 : 80 + r() * 400) / 5) * 5;
+      out.push(['L-' + String(i).padStart(3, '0'), w, h, big ? 1 + Math.floor(r() * 3) : 2 + Math.floor(r() * 10)]);
+    }
+    return out;
+  } }
+};
+function exMsg(t, cls) { const m = $('#exMsg'); m.textContent = t; m.className = 'hint' + (cls ? ' ' + cls : ''); m.hidden = !t; }
+function exAoa(key) {
+  const ex = EXAMPLES[key], rows = ex.rows();
+  if (!rows.length) throw new Error('The parts list is empty. Add at least one valid part first.');
+  return ex.head ? [ex.head, ...rows] : rows;
+}
+function renderExPreview() {
+  const key = $('#exSel').value, ex = EXAMPLES[key], rows = ex.rows();
+  if (!rows.length) { $('#exPre').innerHTML = '<p class="hint" style="padding:10px">The parts list is empty.</p>'; return; }
+  const head = ex.head ? `<thead><tr>${ex.head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>` : '';
+  $('#exPre').innerHTML = `<table class="rtable">${head}<tbody>${rows.map(r => `<tr>${r.map((c, i) => `<td>${i ? esc(dim(c)) : esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  $('#exArea').hidden = true;
+}
+function exTSV(key) {
+  return exAoa(key).map(r => r.map(c => typeof c === 'number' ? String(c).replace('.', ',') : String(c).replace(/[\t\n]/g, ' ')).join('\t')).join('\n');
+}
+$('#exSel').addEventListener('change', () => { exMsg(''); renderExPreview(); });
+$('#exCsv').onclick = () => {
+  exMsg('');
+  try { const key = $('#exSel').value; saveCSV(exAoa(key), EXAMPLES[key].file); } catch (e) { exMsg(e.message, 'err'); }
+};
+$('#exCopy').onclick = async () => {
+  exMsg('');
+  let text;
+  try { text = exTSV($('#exSel').value); } catch (e) { return exMsg(e.message, 'err'); }
+  try {
+    await navigator.clipboard.writeText(text);
+    exMsg('Copied. In Excel, click cell A1 and paste.', 'ok');
+  } catch (e) {
+    const a = $('#exArea'); a.value = text; a.hidden = false; a.focus(); a.select();
+    exMsg('Copying is blocked here. The text below is selected: press Ctrl+C, then paste into Excel.', 'err');
+  }
+};
+$('#loadSample').onclick = () => { parts = SAMPLE.map(p => ({ ...p })); isSample = true; srcName = 'Example parts'; setLoadMsg(''); renderParts(); markStale(); };
+['step', 'minOff', 'gap', 'gGap', 'margin'].forEach(id => $('#' + id).addEventListener('input', markStale));
+['gH', 'gW'].forEach(id => $('#' + id).addEventListener('change', markStale));
+$('#rot').addEventListener('change', markStale);
+
+/* ---------- Sheet sizes ---------- */
+const matLabel = m => m || 'No material';
+const SIZE_KEY = 'sheet-nesting-sizes-v1';
+const DEF_SIZES = [{ id: 's1', W: 2500, H: 1250 }, { id: 's2', W: 3000, H: 1500 }];
+let sheetSizes = null;
+try { sheetSizes = JSON.parse(localStorage.getItem(SIZE_KEY) || 'null'); } catch (e) { sheetSizes = null; }
+if (!Array.isArray(sheetSizes) || !sheetSizes.length) {
+  sheetSizes = DEF_SIZES.map(x => ({ ...x }));
+  // Carry over the single maximum sheet from earlier versions of the page
+  try {
+    const o = JSON.parse(localStorage.getItem('sheet-nesting-settings-v1') || '{}') || {};
+    const w = parseNum(o.sheetW), h = parseNum(o.sheetH);
+    if (w > 0 && h > 0 && !sheetSizes.some(x => x.W === w && x.H === h)) sheetSizes.unshift({ id: 's0', W: w, H: h });
+  } catch (e) {}
+}
+let sizeSeq = sheetSizes.reduce((mx, x) => Math.max(mx, +String(x.id).slice(1) || 0), 0);
+function saveSizes() { try { localStorage.setItem(SIZE_KEY, JSON.stringify(sheetSizes)); } catch (e) {} }
+const sizeLabel = x => x.W > 0 && x.H > 0 ? `${dim(x.W)} × ${dim(x.H)}` : '–';
+function renderSizes() {
+  const one = sheetSizes.length < 2;
+  $('#sizesBody').innerHTML = sheetSizes.map(x => `<tr data-id="${x.id}">
+    <td><input id="szW_${x.id}" data-k="W" class="num${x.W > 0 ? '' : ' bad'}" inputmode="decimal" value="${x.W > 0 ? inVal(x.W) : ''}" aria-label="Sheet width in mm"></td>
+    <td><input id="szH_${x.id}" data-k="H" class="num${x.H > 0 ? '' : ' bad'}" inputmode="decimal" value="${x.H > 0 ? inVal(x.H) : ''}" aria-label="Sheet height in mm"></td>
+    <td><button class="x" type="button" data-del="${x.id}" aria-label="Remove sheet size ${sizeLabel(x)}"${one ? ' disabled' : ''}>×</button></td></tr>`).join('');
+}
+$('#sizesBody').addEventListener('input', e => {
+  const t = e.target, k = t.dataset.k; if (!k) return;
+  const x = sheetSizes.find(z => z.id === t.closest('tr').dataset.id); if (!x) return;
+  const v = parseNum(t.value); x[k] = v > 0 ? v : 0; t.classList.toggle('bad', !(v > 0));
+  saveSizes(); renderMats(); markStale();
+});
+$('#sizesBody').addEventListener('click', e => {
+  const b = e.target.closest('[data-del]'); if (!b || sheetSizes.length < 2) return;
+  const gone = b.dataset.del;
+  sheetSizes = sheetSizes.filter(z => z.id !== gone);
+  Object.values(matSheets).forEach(a => { if (a && Array.isArray(a.off)) a.off = a.off.filter(id => id !== gone); });
+  try { localStorage.setItem(MAT_KEY, JSON.stringify(matSheets)); } catch (err) {}
+  saveSizes(); renderSizes(); renderMats(); markStale();
+});
+$('#addSize').onclick = () => {
+  sheetSizes.push({ id: 's' + (++sizeSeq), W: 0, H: 0 });
+  saveSizes(); renderSizes(); renderMats(); markStale();
+  const el = document.getElementById('szW_s' + sizeSeq); el && el.focus();
+};
+/* ---------- Materials: each nested on its own sheets ---------- */
+const MAT_KEY = 'sheet-nesting-materials-v1';
+let matSheets = {};
+try { matSheets = JSON.parse(localStorage.getItem(MAT_KEY) || '{}') || {}; } catch (e) { matSheets = {}; }
+// Earlier versions stored one sheet size per material: turn it into ticks on the shared list
+Object.keys(matSheets).forEach(m => {
+  const a = matSheets[m]; if (!a || typeof a !== 'object') return;
+  if (a.W > 0 && a.H > 0) {
+    let x = sheetSizes.find(z => z.W === a.W && z.H === a.H);
+    if (!x) { x = { id: 's' + (++sizeSeq), W: a.W, H: a.H }; sheetSizes.push(x); }
+    a.off = sheetSizes.filter(z => z.id !== x.id).map(z => z.id);
+  }
+  delete a.W; delete a.H;
+});
+saveSizes(); try { localStorage.setItem(MAT_KEY, JSON.stringify(matSheets)); } catch (e) {}
+Object.values(matSheets).forEach(a => { if (a && Array.isArray(a.off)) a.off = a.off.filter(id => sheetSizes.some(z => z.id === id)); });
+function sizesFor(m, S) { const off = ((S ? S.matSheets : matSheets)[m] || {}).off || []; return (S ? S.sizes : sheetSizes).filter(x => !off.includes(x.id)); }
+const DEF_PROPS = { t: 1, rho: 7850, price: 0 };
+const isNum = x => typeof x === 'number' && isFinite(x);
+// One-time: earlier versions kept thickness / density / price in the settings key; move them to the "all parts" material
+try {
+  const o = JSON.parse(localStorage.getItem('sheet-nesting-settings-v1') || 'null');
+  if (o && typeof o === 'object' && ['thick', 'density', 'price', 'sheetW', 'sheetH'].some(k => k in o)) {
+    const d = { ...(matSheets[''] || {}) };
+    [['thick', 't', v => v >= 0], ['density', 'rho', v => v > 0], ['price', 'price', v => v >= 0]].forEach(([from, to, ok]) => {
+      const v = parseNum(o[from]); if (ok(v) && !isNum(d[to])) d[to] = v;
+    });
+    matSheets[''] = d;
+    try { localStorage.setItem(MAT_KEY, JSON.stringify(matSheets)); } catch (e) {}
+    ['thick', 'density', 'price', 'sheetW', 'sheetH'].forEach(k => delete o[k]);
+    localStorage.setItem('sheet-nesting-settings-v1', JSON.stringify(o));
+  }
+} catch (e) {}
+function propsOf(m, map) {
+  map = map || matSheets; const a = map[m] || {}, d = map[''] || {};
+  const pick = k => isNum(a[k]) ? a[k] : isNum(d[k]) ? d[k] : DEF_PROPS[k];
+  return { t: pick('t'), rho: pick('rho'), price: pick('price') };
+}
+function matKeys() {
+  const by = {}; let none = 0;
+  parts.forEach(p => { const q = p.qty > 0 ? p.qty : 0; if (p.mat) by[p.mat] = (by[p.mat] || 0) + q; else none += q; });
+  const codes = Object.keys(by).sort();
+  return { by, none, codes, keys: (none > 0 || !codes.length) ? [''].concat(codes) : codes };
+}
+function renderMats() {
+  const { by, none, codes, keys } = matKeys();
+  $('#ptable').classList.toggle('has-mat', codes.length > 0);
+  $('#matsBody').innerHTML = keys.map((m, i) => {
+    const a = matSheets[m] || {}, pr = propsOf(m);
+    const label = m ? `<span class="tbadge mat">${esc(m)}</span>` : (codes.length ? 'Parts without a material code' : 'All parts');
+    const cnt = m ? by[m] : none;
+    const f = (k, lab, unit, val, ph) => `<div class="field"><label for="m${i}_${k}">${lab}</label><div class="inwrap"><input id="m${i}_${k}" data-k="${k}" inputmode="decimal" value="${val}" placeholder="${ph || ''}"><span>${unit}</span></div></div>`;
+    return `<div class="matblk" data-m="${esc(m)}"><div class="mathead">${label}<span class="cnt">${cnt ? cnt + ' pcs' : ''}</span></div>
+      <div class="matgrid"><div class="sztick" role="group" aria-label="Sheet sizes for ${esc(matLabel(m))}"><span class="lab">Sheet sizes (mm)</span>${sheetSizes.map(x => `<label><input type="checkbox" id="mz${i}_${x.id}" data-sz="${x.id}"${(a.off || []).includes(x.id) ? '' : ' checked'}> ${sizeLabel(x)}</label>`).join('')}</div>${f('t', 'Thickness', 'mm', inVal(pr.t))}${f('rho', 'Density', 'kg/m³', inVal(pr.rho))}${f('price', 'Price', '€/kg', inVal(pr.price))}</div></div>`;
+  }).join('');
+}
+$('#matsBody').addEventListener('input', e => {
+  const t = e.target, k = t.dataset.k; if (!k) return;
+  const m = t.closest('.matblk').dataset.m, raw = t.value.trim(), v = parseNum(raw);
+  const cur = { ...(matSheets[m] || {}) };
+  let ok;
+  ok = raw !== '' && (k === 'rho' ? v > 0 : v >= 0);
+  if (raw === '') delete cur[k]; else if (ok) cur[k] = v;
+  t.closest('.inwrap').classList.toggle('bad', !ok);
+  matSheets[m] = cur;
+  try { localStorage.setItem(MAT_KEY, JSON.stringify(matSheets)); } catch (err) {}
+  if (m === '') document.querySelectorAll('#matsBody .matblk').forEach(b => {
+    const bm = b.dataset.m; if (bm === '' || isNum((matSheets[bm] || {})[k])) return;
+    const inp = b.querySelector(`input[data-k="${k}"]`); if (inp) inp.value = inVal(propsOf(bm)[k]);
+  });
+  markStale();
+});
+$('#matsBody').addEventListener('change', e => {
+  const t = e.target, id = t.dataset.sz; if (!id) return;
+  const m = t.closest('.matblk').dataset.m, cur = { ...(matSheets[m] || {}) }, off = new Set(cur.off || []);
+  if (t.checked) off.delete(id); else off.add(id);
+  cur.off = [...off]; matSheets[m] = cur;
+  try { localStorage.setItem(MAT_KEY, JSON.stringify(matSheets)); } catch (err) {}
+  markStale();
+});
+renderSizes();
+/* ---------- Panel type allowances (XML parts only) ---------- */
+const TYPE_KEY ='sheet-nesting-types-v1';
+let typeAdd = {};
+try { typeAdd = JSON.parse(localStorage.getItem(TYPE_KEY) || '{}') || {}; } catch (e) { typeAdd = {}; }
+function addOf(t, map) { const a = (map || typeAdd)[t] || {}; return { w: a.w > 0 ? a.w : 0, h: a.h > 0 ? a.h : 0 }; }
+function blankOf(p, map) { if (!p.type) return { w: p.w, h: p.h }; const a = addOf(p.type, map); return { w: p.w + a.w, h: p.h + a.h }; }
+function usedTypes(R) { return [...new Set(R.parts.map(p => p.type).filter(Boolean))].sort(); }
+function renderTypes() {
+  const by = {};
+  parts.forEach(p => { if (!p.type) return; const b = by[p.type] || (by[p.type] = { n: 0, q: 0 }); b.n++; b.q += p.qty > 0 ? p.qty : 0; });
+  const types = Object.keys(by).sort();
+  $('#typesCard').hidden = !types.length;
+  $('#ptable').classList.toggle('has-type', types.length > 0);
+  $('#typesBody').innerHTML = types.map(t => { const a = addOf(t);
+    return `<tr data-t="${esc(t)}"><td class="tc"><span class="tbadge">${esc(t)}</span></td><td class="cnt">${by[t].q} pcs</td>
+    <td><input id="tw_${esc(t)}" data-k="w" class="num" inputmode="decimal" value="${inVal(a.w)}" aria-label="Add to width for ${esc(t)} in mm"></td>
+    <td><input id="th_${esc(t)}" data-k="h" class="num" inputmode="decimal" value="${inVal(a.h)}" aria-label="Add to height for ${esc(t)} in mm"></td></tr>`; }).join('');
+}
+$('#typesBody').addEventListener('input', e => {
+  const t = e.target, k = t.dataset.k; if (!k) return;
+  const type = t.closest('tr').dataset.t, v = parseNum(t.value);
+  t.classList.toggle('bad', t.value.trim() !== '' && !(v >= 0));
+  typeAdd[type] = { ...(typeAdd[type] || {}), [k]: v >= 0 ? v : 0 };
+  try { localStorage.setItem(TYPE_KEY, JSON.stringify(typeAdd)); } catch (err) {}
+  markLimits(); markStale();
+});
+/* ---------- Remember settings in this browser ---------- */
+const SET_KEY = 'sheet-nesting-settings-v1';
+const SET_TEXT = ['step', 'minOff', 'gap', 'gGap', 'margin', 'limW', 'limH', 'limD', 'time'];
+const SET_CHECK = ['rot', 'mL', 'mR', 'mB', 'topm', 'gH', 'gW'];
+function saveSettings() {
+  const o = {};
+  SET_TEXT.forEach(id => o[id] = $('#' + id).value);
+  SET_CHECK.forEach(id => o[id] = $('#' + id).checked);
+  try { localStorage.setItem(SET_KEY, JSON.stringify(o)); } catch (e) { $('#rememberTxt').textContent = 'Settings cannot be remembered in this browser'; }
+}
+function restoreSettings() {
+  let o = null;
+  try { o = JSON.parse(localStorage.getItem(SET_KEY) || 'null'); } catch (e) { o = null; }
+  if (!o || typeof o !== 'object') return;
+  SET_TEXT.forEach(id => { if (typeof o[id] === 'string') $('#' + id).value = o[id]; });
+  SET_CHECK.forEach(id => { if (typeof o[id] === 'boolean') $('#' + id).checked = o[id]; });
+}
+restoreSettings();
+SET_TEXT.forEach(id => $('#' + id).addEventListener('input', saveSettings));
+SET_CHECK.forEach(id => $('#' + id).addEventListener('change', saveSettings));
+$('#resetSet').onclick = () => {
+  if (!confirm('Reset all settings to defaults? Sheet sizes go back to 2.500 × 1.250 and 3.000 × 1.500 mm and the sheet-size ticks per material are cleared. Material thickness, density, price and panel-type allowances are kept.')) return;
+  SET_TEXT.forEach(id => { const el = $('#' + id); el.value = el.defaultValue; });
+  SET_CHECK.forEach(id => { const el = $('#' + id); el.checked = el.defaultChecked; });
+  try { localStorage.removeItem(SET_KEY); } catch (e) {}
+  sheetSizes = DEF_SIZES.map(x => ({ ...x })); sizeSeq = 2; saveSizes();
+  Object.values(matSheets).forEach(a => { if (a) delete a.off; });
+  try { localStorage.setItem(MAT_KEY, JSON.stringify(matSheets)); } catch (e) {}
+  renderSizes(); renderMats(); markLimits();
+  topHint(); markStale();
+};
+function edgeList(S) { const a = []; if (S.mL) a.push('left'); if (S.mR) a.push('right'); if (S.mB) a.push('bottom'); if (S.topM) a.push('top'); return a.length ? a.join(', ') : 'none'; }
+function edgeM(S) { const m = S.margin; return { l: S.mL ? m : 0, r: S.mR ? m : 0, b: S.mB ? m : 0, t: S.topM ? m : 0 }; }
+function topHint() {
+  const off = ['mL', 'mR', 'mB'].filter(id => !$('#' + id).checked).length;
+  $('#topHint').textContent = ($('#topm').checked
+    ? 'Reduced height = top of the highest part + edge margin.'
+    : 'Reduced height = top of the highest part. The sheet is cut directly at the part edge.')
+    + (off ? ' Parts can touch the edges without a margin.' : '');
+}
+['mL', 'mR', 'mB', 'topm'].forEach(id => $('#' + id).addEventListener('change', () => { topHint(); markStale(); }));
+topHint();
+
+/* ---------- File import ---------- */
+function norm(s) { return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+function classify(name) {
+  const n = norm(name); if (!n) return null;
+  if (/^(qty|quantity|qnt|count|pcs|pieces|kos|kosov|kolicina|stevilo|amount|menge|stk|anzahl)$/.test(n) || /^(qty|quant|kolicin|kosov|pcs|count|anzahl)/.test(n)) return 'qty';
+  if (/^(w|width|sirina|breite|b|x|dimx|sizex)$/.test(n) || /^(width|sirin|breite)/.test(n)) return 'w';
+  if (/^(h|height|visina|hohe|hoehe|y|l|length|len|dolzina|lange|laenge|dimy|sizey)$/.test(n) || /^(height|visin|length|dolzin)/.test(n)) return 'h';
+  if (/^(material|mat|materijal|rawmaterial|werkstoff)/.test(n)) return 'mat';
+  if (/^(id|name|part|naziv|oznaka|pozicija|poz|ime|del|code|sifra|article|artikel|item|description|opis|label|ref)/.test(n)) return 'id';
+  return null;
+}
+// Single letters are ambiguous (x / y can be a position, b / l a width / length): full names win
+const WEAK = new Set(['x', 'y', 'b', 'l']);
+const isWeak = name => WEAK.has(norm(name));
+function partsFromRows(rows) {
+  let map = null, start = 0;
+  for (let r = 0; r < Math.min(rows.length, 15); r++) {
+    const m = {};
+    for (const weak of [false, true]) (rows[r] || []).forEach((c, ci) => { if (typeof c !== 'string' || isWeak(c) !== weak) return; const k = classify(c); if (k && m[k] === undefined) m[k] = ci; });
+    if (m.w !== undefined && m.h !== undefined) { map = m; start = r + 1; break; }
+  }
+  let note = 'Columns detected from the header row.';
+  if (!map) {
+    const first = rows.find(r => r && r.some(c => c !== null && c !== ''));
+    if (!first) return { list: [], note: '' };
+    map = isNaN(parseNum(first[0])) ? { id: 0, w: 1, h: 2, qty: 3 } : { w: 0, h: 1, qty: 2 };
+    note = 'No header found, so columns were read as ' + (map.id === 0 ? 'name, width, height, qty.' : 'width, height, qty.');
+  }
+  const list = [];
+  for (let r = start; r < rows.length; r++) {
+    const row = rows[r]; if (!row) continue;
+    const w = parseNum(row[map.w]), h = parseNum(row[map.h]);
+    if (!(w > 0 && h > 0)) continue;
+    let q = map.qty !== undefined ? Math.round(parseNum(row[map.qty])) : 1; if (!(q > 0)) q = 1;
+    const raw = map.id !== undefined ? row[map.id] : null;
+    const mv = map.mat !== undefined && row[map.mat] != null ? String(row[map.mat]).trim() : '';
+    list.push({ id: raw != null && String(raw).trim() !== '' ? String(raw).trim() : 'P' + (list.length + 1), w, h, qty: q, mat: mv });
+  }
+  return { list, note };
+}
+function partsFromXML(text) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length) throw new Error('The XML file could not be read. Check that it is well-formed.');
+  const salv = partsFromSalvagnini(doc);
+  if (salv) return salv;
+  const fieldsOf = el => {
+    const f = {};
+    for (const weak of [false, true]) {
+      for (const a of el.attributes) { if (isWeak(a.name) !== weak) continue; const k = classify(a.name); if (k && f[k] === undefined) f[k] = a.value; }
+      for (const c of el.children) if (!c.children.length) { const nm = c.localName || c.tagName; if (isWeak(nm) !== weak) continue; const k = classify(nm); if (k && f[k] === undefined) f[k] = c.textContent.trim(); }
+    }
+    return f;
+  };
+  const list = [];
+  for (const el of doc.getElementsByTagName('*')) {
+    const f = fieldsOf(el);
+    if (f.w === undefined || f.h === undefined) continue;
+    if ((f.id === undefined || f.qty === undefined) && el.parentElement) {
+      const pf = fieldsOf(el.parentElement);
+      if (f.id === undefined && pf.id !== undefined) f.id = pf.id;
+      if (f.qty === undefined && pf.qty !== undefined) f.qty = pf.qty;
+    }
+    const w = parseNum(f.w, 'xml'), h = parseNum(f.h, 'xml');
+    if (!(w > 0 && h > 0)) continue;
+    let q = f.qty !== undefined ? Math.round(parseNum(f.qty, 'xml')) : 1; if (!(q > 0)) q = 1;
+    list.push({ id: (f.id || '').trim() || 'P' + (list.length + 1), w, h, qty: q, mat: (f.mat || '').trim() });
+  }
+  return { list, note: 'Parts read from XML elements with width and height.' };
+}
+/* Salvagnini S4/P4 production request: <main><order_entry> with sizex/sizey in production_desc_1 */
+function partsFromSalvagnini(doc) {
+  const entries = [...doc.getElementsByTagName('order_entry')];
+  if (!entries.length) return null;
+  const txt = (e, t) => { const n = e.getElementsByTagName(t)[0]; return n ? n.textContent.trim() : ''; };
+  const list = [], skipped = [], orders = new Set();
+  let fromUser = 0;
+  for (const e of entries) {
+    const name = txt(e, 'object_name'), d1 = txt(e, 'production_desc_1'), ud = txt(e, 'user_data'), order = txt(e, 'order_code');
+    let w = NaN, h = NaN, m;
+    if ((m = /sizex\s*=\s*([\d.,]+)/i.exec(d1))) w = parseNum(m[1], 'xml');
+    if ((m = /sizey\s*=\s*([\d.,]+)/i.exec(d1))) h = parseNum(m[1], 'xml');
+    if (!(w > 0 && h > 0) && (m = /(\d+)c(\d+)x(\d+)c(\d+)/.exec(ud))) { w = +(m[1] + '.' + m[2]); h = +(m[3] + '.' + m[4]); fromUser++; }
+    if (!(w > 0 && h > 0) && (m = /(\d+(?:[.,]\d+)?)x(\d+(?:[.,]\d+)?)\.S4/i.exec(d1))) { w = parseNum(m[1], 'xml'); h = parseNum(m[2], 'xml'); fromUser++; }
+    if (!(w > 0 && h > 0)) { skipped.push(name || '(no name)'); continue; }
+    let q = Math.round(parseNum(txt(e, 'quantity_requested'), 'xml')); if (!(q > 0)) q = 1;
+    let id = name || 'P' + (list.length + 1);
+    if (order) { orders.add(order); if (id.startsWith(order + '-')) id = id.slice(order.length + 1); }
+    const type = (ud.split('-')[1] || '').trim().toUpperCase();
+    list.push({ id, w, h, qty: q, type, mat: txt(e, 'raw_material_code') });
+  }
+  let note = `Salvagnini production request: size from sizex × sizey${fromUser ? ` (${fromUser} from the part code)` : ''}`;
+  if (orders.size === 1) note += `, order ${[...orders][0]}`;
+  note += '.';
+  if (skipped.length) note += ` Skipped ${skipped.length} without a size: ${skipped.join(', ')}.`;
+  return { list, note, orders: [...orders], skipped };
+}
+function setLoadMsg(t) { const m = $('#loadmsg'); m.textContent = t; m.hidden = !t; }
+async function loadFile(file) {
+  showErr('');
+  try {
+    const name = file.name.toLowerCase();
+    let res;
+    if (name.endsWith('.xml')) res = partsFromXML(await file.text());
+    else {
+      if (typeof XLSX === 'undefined') throw new Error('The Excel reader did not load. Check your connection and reload the page.');
+      // CSV as raw text: SheetJS would read a decimal comma (1180,5) as a thousands separator (11805); parseNum handles it
+      const wb = name.endsWith('.csv') ? XLSX.read(await file.text(), { type: 'string', raw: true }) : XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      for (const sn of wb.SheetNames) {
+        const r = partsFromRows(XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: null }));
+        if (r.list.length) { res = r; if (wb.SheetNames.length > 1) res.note += ` Sheet: ${sn}.`; break; }
+        if (!res) res = r;
+      }
+    }
+    if (!res.list.length) throw new Error(`No parts found in ${file.name}. Each part needs a width and a height greater than 0.` + (res.skipped && res.skipped.length ? ` Skipped ${res.skipped.length} without a size: ${res.skipped.join(', ')}.` : ''));
+    isSample = false; srcName = file.name + (res.orders && res.orders.length === 1 ? ' · order ' + res.orders[0] : '');
+    parts = res.list;
+    renderParts(); markStale();
+    setLoadMsg(`Loaded ${res.list.length} part types from ${file.name}. ${res.note}`);
+  } catch (err) { showErr(err.message || String(err)); }
+}
+const drop = $('#drop'), fileIn = $('#file');
+drop.addEventListener('click', () => fileIn.click());
+drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileIn.click(); } });
+fileIn.addEventListener('change', () => { if (fileIn.files[0]) loadFile(fileIn.files[0]); fileIn.value = ''; });
+['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) loadFile(f); });
+
+/* ---------- Run ---------- */
+function readSettings() {
+  const v = id => parseNum($('#' + id).value);
+  return { sizes: sheetSizes.map(x => ({ ...x })), gap: v('gap'), gGap: v('gGap'), gH: $('#gH').checked, gW: $('#gW').checked, margin: v('margin'), rot: $('#rot').checked, topM: $('#topm').checked, mL: $('#mL').checked, mR: $('#mR').checked, mB: $('#mB').checked, step: v('step'), minOff: v('minOff'), lim: readLim(), typeAdd: JSON.parse(JSON.stringify(typeAdd)), matSheets: JSON.parse(JSON.stringify(matSheets)), time: v('time') };
+}
+function startRun() {
+  showErr('');
+  const S = readSettings();
+  if (!(S.gap >= 0) || !(S.margin >= 0)) return showErr('Gap between parts and edge margin must be 0 or more.');
+  if ((S.gH || S.gW) && (!(S.gGap >= 0) || S.gGap > S.gap)) return showErr('Gap at guillotine cut must be 0 or more and not larger than the gap between parts.');
+  S.gl = (S.gH || S.gW) && S.gGap < S.gap ? { G: S.gap, g: S.gGap, H: S.gH, W: S.gW } : null;
+  const E = edgeM(S);
+  if (S.sizes.some(x => !(x.W > 0 && x.H > 0))) return showErr('Enter a width and height for every sheet size, or remove the empty row.');
+  if (!(S.time > 0)) S.time = 5;
+  if (!(S.step >= 0)) S.step = 0;
+  if (!(S.minOff >= 0)) S.minOff = 0;
+  S.time = Math.min(Math.max(S.time, 0.5), 120);
+  const bad = parts.filter(p => !(p.w > 0 && p.h > 0 && p.qty > 0));
+  if (bad.length) return showErr(`Fix the highlighted values first: ${bad.map(p => p.id || 'unnamed').join(', ')}.`);
+  if (!parts.length) return showErr('Add at least one part.');
+
+  const byMat = new Map();
+  parts.forEach((p, pi) => { const m = p.mat || ''; if (!byMat.has(m)) byMat.set(m, []); byMat.get(m).push(pi); });
+  const groups = [], unfit = [], over = [];
+  for (const mat of [...byMat.keys()].sort()) {
+    const allowed = sizesFor(mat, S);
+    if (!allowed.length) return showErr(`Tick at least one sheet size for ${matLabel(mat)} under Materials.`);
+    const szs = [];
+    for (const x of allowed) {
+      if (E.l + E.r >= x.W || E.b + E.t >= x.H) return showErr(`The edge margin is too large for the ${sizeLabel(x)} mm sheet.`);
+      szs.push({ id: x.id, W: x.W, H: x.H, UW: x.W - E.l - E.r + S.gap, UH: x.H - E.b - E.t + S.gap });
+    }
+    const insts = [];
+    byMat.get(mat).forEach(pi => {
+      const p = parts[pi], { w: bw, h: bh } = blankOf(p, S.typeAdd), ew = bw + S.gap, eh = bh + S.gap;
+      const why = hasLim(S.lim) ? overLimit(bw, bh, S.lim) : '';
+      if (why) { over.push({ ...p, w: bw, h: bh, why }); return; }
+      const fits = szs.some(z => (ew <= z.UW + EPS && eh <= z.UH + EPS) || (S.rot && eh <= z.UW + EPS && ew <= z.UH + EPS));
+      if (!fits) { unfit.push({ ...p, w: bw, h: bh, sheetTxt: szs.map(sizeLabel).join(' or ') }); return; }
+      for (let q = 0; q < p.qty; q++) insts.push({ pi, w: bw, h: bh, ew, eh });
+    });
+    if (!insts.length) continue;
+    const props = propsOf(mat, S.matSheets);
+    if (szs.length === 1) {
+      const ctx = { insts, UW: szs[0].UW, UH: szs[0].UH, rot: S.rot, sizes: szs, gl: S.gl };
+      groups.push({ mat, sizes: szs, multi: false, ...props, ctx, ...initGroup(ctx) });
+    } else {
+      const cost = (si, top) => szs[si].W * reducedH(szs[si].H, E.b + top - S.gap, S, E).hRed;
+      const ctx = { insts, UW: szs[0].UW, UH: szs[0].UH, rot: S.rot, sizes: szs, cost, gl: S.gl };
+      groups.push({ mat, sizes: szs, multi: true, ...props, ctx, ...initGroup(ctx) });
+    }
+  }
+  if (!groups.length) return showErr(over.length && !unfit.length ? 'All parts are over the part size limits.' : 'None of the parts fit on their sheet with the current margin or within the part size limits.');
+  job = { S, groups, gi: 0, unfit, over, parts: parts.map(p => ({ ...p })), src: srcName, dirty: false, iter: groups.reduce((t, g) => t + 6 * (g.multi ? g.rules.length : 1), 0), t0: performance.now(), budget: S.time * 1000, stop: false };
+  $('#run').textContent = 'Stop'; $('#run').classList.add('stop');
+  step();
+}
+function step() {
+  const j = job; if (!j) return;
+  const end = performance.now() + 30;
+  while (performance.now() < end) {
+    const el = performance.now() - j.t0;
+    if (el >= j.budget || j.stop) break;
+    const g = j.groups[j.gi++ % j.groups.length];
+    searchStep(g, g.ctx, el / j.budget);
+    j.iter++;
+  }
+  const el = performance.now() - j.t0;
+  $('#barFill').style.width = Math.min(100, el / j.budget * 100) + '%';
+  const nS = j.groups.reduce((s, g) => s + g.best.sheets.length, 0);
+  $('#ptext').textContent = `${fmt(j.iter, 0)} layouts tried · best: ${nS} sheets` + (j.groups.length > 1 ? ` in ${j.groups.length} materials` : '') + (j.groups.some(g => g.multi) ? (el < j.budget * PH_ONE ? ' · trying each sheet size' : el < j.budget * PH_ORDER ? ' · choosing sheet sizes' : ' · merging and repacking sheets') : el >= j.budget * 0.75 ? ' · tightening heights' : el < j.budget * 0.5 ? ' · reducing sheet count' : ' · lowering heights');
+  if (el >= j.budget || j.stop) finish(); else setTimeout(step, 0);
+}
+function finish() {
+  const j = job; job = null;
+  $('#run').textContent = 'Run nesting'; $('#run').classList.remove('stop');
+  $('#barFill').style.width = '100%';
+  $('#ptext').textContent = `Done · ${fmt(j.iter, 0)} layouts tried in ${fmt((performance.now() - j.t0) / 1000, 1)} s`;
+  lastResult = buildResult(j);
+  $('#stale').hidden = !j.dirty;
+  renderResults(lastResult);
+}
+$('#run').onclick = () => { if (job) job.stop = true; else startRun(); };
+
+/* ---------- Results ---------- */
+const SUMK = ['A', 'Smax', 'Sred', 'lossMax', 'lossRed', 'saved'];
+function sumSheets(list) {
+  const sum = f => SUMK.reduce((o, k) => (o[k] = list.reduce((s, x) => s + f(x)[k], 0), o), {});
+  const t = sum(x => x); t.kg = sum(x => x.kg); t.eur = sum(x => x.eur);
+  t.n = list.reduce((s, x) => s + x.items.length, 0); t.count = list.length; return t;
+}
+// Segments of the guillotine cuts (sheet coordinates, y from the bottom): each cut runs across its region at the middle of its band.
+function glCutSegs(node, box, out) {
+  if (!node.kids) return;
+  const y = node.axis === 'y', n = node.kids.length;
+  let lo = y ? box.y1 : box.x1;
+  node.kids.forEach((kid, k) => {
+    const last = k === n - 1, hi = last ? (y ? box.y2 : box.x2) : (node.bands[k].lo + node.bands[k].hi) / 2;
+    if (!last) out.push(y ? { x1: box.x1, y1: hi, x2: box.x2, y2: hi } : { x1: hi, y1: box.y1, x2: hi, y2: box.y2 });
+    glCutSegs(kid, y ? { x1: box.x1, y1: lo, x2: box.x2, y2: hi } : { x1: lo, y1: box.y1, x2: hi, y2: box.y2 }, out);
+    lo = hi;
+  });
+}
+const glTxt = S => S.gl ? [S.gl.H ? 'height' : '', S.gl.W ? 'width' : ''].filter(Boolean).join(', ') : 'off';
+function buildResult(j) {
+  const { S } = j, E = edgeM(S);
+  const sheets = [], mats = [];
+  for (const g of j.groups) {
+    const { ctx, mat } = g, hasM = g.t > 0 && g.rho > 0;
+    const kgOf = a => hasM ? m2(a) * (g.t / 1000) * g.rho : 0;
+    const list = g.best.sheets.map(sh => {
+      const sz = g.sizes[sh.si || 0], W = sz.W, H = sz.H;
+      const items = sh.items.map(it => {
+        const p = ctx.insts[it.i];
+        const w = it.r ? p.h : p.w, h = it.r ? p.w : p.h;
+        return { pi: p.pi, x: E.l + it.x, y: E.b + it.y, w, h, r: it.r };
+      });
+      const realTop = Math.max(...items.map(i => i.y + i.h));
+      const { hRed, full } = reducedH(H, realTop, S, E);
+      const A = items.reduce((s, i) => s + i.w * i.h, 0);
+      const Smax = W * H, Sred = W * hRed;
+      const out = { mat, W, H, items, hRed, full, A, Smax, Sred, lossMax: Smax - A, lossRed: Sred - A, saved: Smax - Sred };
+      if (S.gl) { out.cuts = []; glCutSegs(glTree(items.map(i => ({ x: i.x, y: i.y, w: i.w, h: i.h })), S.gl), { x1: 0, y1: 0, x2: W, y2: hRed }, out.cuts); }
+      out.kg = SUMK.reduce((o, k) => (o[k] = kgOf(out[k]), o), {});
+      out.eur = SUMK.reduce((o, k) => (o[k] = out.kg[k] * (g.price || 0), o), {});
+      return out;
+    }).sort((a, b) => b.W * b.H - a.W * a.H || b.hRed - a.hRed || b.A - a.A);
+    sheets.push(...list);
+    mats.push({ mat, sizes: sizeCounts(list), allowed: g.sizes, t: g.t, rho: g.rho, price: g.price, ...sumSheets(list) });
+  }
+  const tot = sumSheets(sheets);
+  const hasMat = sheets.some(s => s.mat);
+  const mass = mats.some(m => m.t > 0 && m.rho > 0), cost = mats.some(m => m.t > 0 && m.rho > 0 && m.price > 0);
+  const sizesUsed = sizeCounts(sheets);
+  return { S, sheets, tot, mats, hasMat, mass, cost, sizesUsed, multiSize: sizesUsed.length > 1, unfit: j.unfit, over: j.over, parts: j.parts.map(p => { const b = blankOf(p, S.typeAdd); return { ...p, bw: b.w, bh: b.h }; }), date: today(), src: j.src };
+}
+function sizeCounts(list) {
+  const by = new Map();
+  list.forEach(x => { const k = x.W + 'x' + x.H, c = by.get(k) || { W: x.W, H: x.H, n: 0 }; c.n++; by.set(k, c); });
+  return [...by.values()].sort((a, b) => a.W * a.H - b.W * b.H);
+}
+const sizeListTxt = arr => arr.length === 1 ? `${sizeLabel(arr[0])} mm` : arr.map(x => `${x.n}× ${sizeLabel(x)}`).join(' · ') + ' mm';
+const sizeTxt = R => sizeListTxt(R.sizesUsed);
+const massTxt = (x, k, R) => (R.mass ? ' · ' + fmt(x.kg[k], 1) + ' kg' : '') + (R.cost ? ' · ' + fmt(x.eur[k], 2) + ' €' : '');
+const pct = (a, b) => b > 0 ? a / b * 100 : 0;
+// portrait sheets get a side-by-side layout (drawing + stats) on screen and in the report
+const isTall = s => s.H > s.W;
+const sheetCounts = s => { const c = {}; s.items.forEach(i => c[i.pi] = (c[i.pi] || 0) + 1); return Object.keys(c).map(Number).sort((a, b) => a - b).map(pi => [pi, c[pi]]); };
+
+function renderResults(R) {
+  const { S, sheets, tot } = R, mass = R.mass;
+  const pMax = pct(tot.lossMax, tot.Smax), pRed = pct(tot.lossRed, tot.Sred);
+  let h = '';
+  if (R.over.length) h += `<div class="msg">These parts are over the part size limits (${esc(limTxt(R.S.lim))}, blank size) and were left out: ${R.over.map(p => `${esc(p.id)} (${esc(p.why)})`).join(', ')}.</div>`;
+  if (R.unfit.length) h += `<div class="msg">These parts (blank size) do not fit on their sheet with the current margin and were left out: ${R.unfit.map(p => `${esc(p.id)} (${dim(p.w)} × ${dim(p.h)} mm${p.mat ? ', ' + esc(p.mat) : ''}, sheet ${p.sheetTxt} mm)`).join(', ')}.</div>`;
+  h += `<div class="stats">
+    <div class="stat"><span class="k">Sheets</span><span class="v">${sheets.length}</span><span class="s">${sizeTxt(R)} · ${fmt(tot.n, 0)} pcs</span></div>
+    <div class="stat"><span class="k">Loss · max sheet</span><span class="v">${fmt(pMax, 1)} %</span><span class="s">${fmt(m2(tot.lossMax), 3)} m²${massTxt(tot, 'lossMax', R)}</span></div>
+    <div class="stat"><span class="k">Loss · reduced sheet</span><span class="v">${fmt(pRed, 1)} %</span><span class="s">${fmt(m2(tot.lossRed), 3)} m²${massTxt(tot, 'lossRed', R)}</span></div>
+    <div class="stat good"><span class="k">Difference (saved)</span><span class="v">${fmt(m2(tot.saved), 3)} m²</span><span class="s">−${fmt(pMax - pRed, 1)} pp${massTxt(tot, 'saved', R)}</span></div>
+  </div>`;
+
+  const massCols = (mass ? '<th>Saved<br>kg</th>' : '') + (R.cost ? '<th>Saved<br>€</th>' : '');
+  const mc = R.hasMat, mth = mc ? '<th>Material</th>' : '';
+  const ms = R.multiSize, msh = ms ? '<th>Sheet size<br>mm</th>' : '';
+  const row = (lab, x, n, mcell) => `<tr><td>${lab}</td>${mc ? `<td style="text-align:left">${mcell || ''}</td>` : ''}<td>${n}</td><td>${fmt(m2(x.A), 3)}</td>${ms ? `<td>${x.W ? sizeLabel(x) : ''}</td>` : ''}<td>${x.hRed !== undefined ? dim(x.hRed) : '–'}${x.full ? ' <span class="pct">full</span>' : ''}</td>
+    <td>${fmt(m2(x.lossMax), 3)} <span class="pct">${fmt(pct(x.lossMax, x.Smax), 1)} %</span></td>
+    <td>${fmt(m2(x.lossRed), 3)} <span class="pct">${fmt(pct(x.lossRed, x.Sred), 1)} %</span></td>
+    <td class="good">${fmt(m2(x.saved), 3)}</td>${mass ? `<td class="good">${fmt(x.kg.saved, 1)}</td>` : ''}${R.cost ? `<td class="good">${fmt(x.eur.saved, 2)}</td>` : ''}</tr>`;
+  if (R.mats.length > 1) h += `<section class="card"><h2>Per material</h2>
+    <div class="tablewrap"><table class="rtable"><thead><tr><th>Material</th><th>Sheet sizes used<br>mm</th><th>Sheets</th><th>Parts</th><th>Loss · max sheet<br>m² · %</th><th>Loss · reduced<br>m² · %</th><th>Saved<br>m²</th>${massCols}</tr></thead>
+    <tbody>${R.mats.map(m => `<tr><td>${esc(matLabel(m.mat))}</td><td>${sizeListTxt(m.sizes).replace(/ mm$/, '')}</td><td>${m.count}</td><td>${m.n}</td>
+    <td>${fmt(m2(m.lossMax), 3)} <span class="pct">${fmt(pct(m.lossMax, m.Smax), 1)} %</span></td>
+    <td>${fmt(m2(m.lossRed), 3)} <span class="pct">${fmt(pct(m.lossRed, m.Sred), 1)} %</span></td>
+    <td class="good">${fmt(m2(m.saved), 3)}</td>${mass ? `<td class="good">${fmt(m.kg.saved, 1)}</td>` : ''}${R.cost ? `<td class="good">${fmt(m.eur.saved, 2)}</td>` : ''}</tr>`).join('')}</tbody></table></div></section>`;
+  h += `<section class="card"><div class="section-h"><h2>Per sheet</h2><span><button class="btn small" id="copyBtn" type="button">Copy for Excel</button> <button class="btn small" id="xlsxBtn" type="button">Download Excel</button></span></div>
+    <div class="tablewrap"><table class="rtable"><thead><tr><th>Sheet</th>${mth}<th>Parts</th><th>Parts area<br>m²</th>${msh}<th>Reduced height<br>mm</th><th>Loss · max sheet<br>m² · %</th><th>Loss · reduced<br>m² · %</th><th>Saved<br>m²</th>${massCols}</tr></thead>
+    <tbody>${sheets.map((s, k) => row(String(k + 1), s, s.items.length, esc(s.mat))).join('')}</tbody>
+    <tfoot>${row('Total', { ...tot, hRed: undefined }, tot.n)}</tfoot></table></div>
+    <div id="copyBox" hidden><p class="hint">Copying is blocked here. Select all the text below and copy it manually.</p><textarea class="copyarea" id="copyArea" readonly></textarea></div>
+  </section>`;
+
+  h += `<section class="card"><div class="section-h"><h2>Report</h2><span><button class="btn small" id="docxBtn" type="button">Save report (.docx)</button></span></div>
+    <p class="hint">Saves a Word document with the summary, settings, parts list, a drawing of each sheet and the part positions. Each sheet starts on a new page.</p>
+    <p class="hint" id="repMsg" hidden></p></section>`;
+  const counts = {};
+  sheets.forEach(s => s.items.forEach(i => counts[i.pi] = (counts[i.pi] || 0) + 1));
+  h += `<section class="card"><div class="section-h"><h2>Layouts</h2>
+    <div class="keys"><span><i class="kbox red"></i>Reduced sheet</span><span><i class="kbox sav"></i>Offcut saved</span><span><i class="kcut"></i>Cut line</span>${sheets.some(s => s.cuts && s.cuts.length) ? '<span><i class="kgcut"></i>Guillotine cut</span>' : ''}</div></div>
+    <div class="legend">${R.parts.map((p, i) => counts[i] ? `<span><i class="sw c${i % 8}"></i>${esc(p.id)} <em>${counts[i]}×</em></span>` : '').join('')}</div>
+    <p class="hint">Parts are placed bottom-left. Y is measured from the bottom edge of the sheet. Hover a part for its size.</p></section>`;
+  h += `<div class="sheets">${sheets.map((s, k) => { const tall = isTall(s), foot = `<div class="foot"><span>Loss max <b>${fmt(pct(s.lossMax, s.Smax), 1)} %</b></span><span>Loss reduced <b>${fmt(pct(s.lossRed, s.Sred), 1)} %</b></span><span>Offcut <b>${dim(s.H - s.hRed)} mm</b></span></div>`;
+    return `<article class="sheetcard${tall ? ' tall' : ''}">
+    <header><h3>Sheet ${k + 1}${s.mat ? ' · ' + esc(s.mat) : ''}</h3><span class="meta">${s.items.length} parts · ${R.multiSize ? sizeLabel(s) + ' → ' : ''}${dim(s.W)} × ${dim(s.hRed)} mm${s.full ? ` · kept full (offcut under ${dim(S.minOff)} mm)` : ''}</span></header>
+    <div class="sbody">${sheetSVG(s, k, R)}${tall ? `<div class="side">${foot}<div class="legend">${sheetCounts(s).map(([pi, n]) => `<span><i class="sw c${pi % 8}"></i>${esc(R.parts[pi].id)} <em>${n}×</em></span>`).join('')}</div></div>` : foot}</div>
+  </article>`; }).join('')}</div>`;
+  $('#results').innerHTML = h;
+  $('#copyBtn').onclick = copyResults;
+  $('#xlsxBtn').onclick = () => saveXLSX(lastResult);
+  $('#docxBtn').onclick = saveReportDocx;
+}
+function sheetSVG(s, k, R) {
+  const { W, H } = s, E = edgeM(R.S), hr = s.hRed, yCut = H - hr;
+  const big = Math.max(W, H), pad = big * 0.012, fs = big * 0.026, hs = big / 70;
+  let o = `<svg viewBox="${-pad} ${-pad} ${W + 2 * pad} ${H + 2 * pad}" style="--ar:${((W + 2 * pad) / (H + 2 * pad)).toFixed(4)}" role="img" aria-label="Sheet ${k + 1} layout, reduced height ${dim(hr)} mm">
+    <defs><pattern id="hatch${k}" patternUnits="userSpaceOnUse" width="${hs}" height="${hs}" patternTransform="rotate(45)">
+    <rect width="${hs}" height="${hs}" class="saved-bg"/><line x1="0" y1="0" x2="0" y2="${hs}" class="saved-line" stroke-width="${hs * 0.3}"/></pattern></defs>
+    <rect x="0" y="0" width="${W}" height="${H}" fill="url(#hatch${k})" class="sheet-max"/>
+    <rect x="0" y="${yCut}" width="${W}" height="${hr}" class="sheet-red"/>`;
+  if ((E.l || E.r || E.b || E.t) && hr > E.t + E.b) o += `<rect x="${E.l}" y="${yCut + E.t}" width="${W - E.l - E.r}" height="${hr - E.t - E.b}" class="margin"/>`;
+  for (const it of s.items) {
+    const p = R.parts[it.pi], y = H - it.y - it.h;
+    const label = p.id;
+    let f = Math.min(fs, it.h * 0.42, it.w / Math.max(1, label.length * 0.56));
+    const txt = f >= fs * 0.4 ? `<text class="plabel" x="${it.x + it.w / 2}" y="${y + it.h / 2}" font-size="${f}" text-anchor="middle" dominant-baseline="central">${esc(label)}</text>` : '';
+    o += `<g class="pg"><title>${esc(p.id)} · ${dim(it.w)} × ${dim(it.h)} mm${it.r ? ' (rotated)' : ''} · X ${dim(it.x)}, Y ${dim(it.y)}</title>
+      <rect class="part c${it.pi % 8}" x="${it.x}" y="${y}" width="${it.w}" height="${it.h}"/>${txt}</g>`;
+  }
+  if (s.cuts) for (const c of s.cuts) o += `<line class="gcut" x1="${c.x1}" x2="${c.x2}" y1="${H - c.y1}" y2="${H - c.y2}"/>`;
+  if (yCut > 0.5) {
+    o += `<line class="cut" x1="${-pad}" x2="${W + pad}" y1="${yCut}" y2="${yCut}"/>`;
+    if (yCut > fs * 1.7) o += `<text class="cut-label" x="${W - fs * 0.5}" y="${yCut - fs * 0.6}" font-size="${fs}" text-anchor="end">offcut ${dim(H - hr)} mm</text>`;
+  }
+  return o + '</svg>';
+}
+const xlText = s => /^[=+\-@]/.test(String(s)) ? "'" + s : s;
+const toTSV = L => L.map(a => a.map(c => String(c).replace(/[\t\r\n]+/g, ' ')).join('\t')).join('\n');
+const buildTSV = R => toTSV(resultRows(R));
+// CSV for Slovene Excel: semicolon separator, decimal comma, UTF-8 BOM so Š/Č/Ž and m² show correctly
+const csvCell = c => { c = typeof c === 'number' ? String(c).replace('.', ',') : String(c ?? ''); return /[;"\r\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; };
+const toCSV = L => '﻿' + L.map(a => a.map(csvCell).join(';')).join('\r\n') + '\r\n';
+function saveBlob(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+function saveCSV(L, name) { saveBlob(new Blob([toCSV(L)], { type: 'text/csv;charset=utf-8' }), name); }
+function saveXLSX(R) {
+  try {
+    if (typeof XLSX === 'undefined') throw new Error('The Excel library did not load (needs internet).');
+    const ws = XLSX.utils.aoa_to_sheet(resultRows(R, true));
+    ws['!cols'] = Array.from({ length: 20 }, (_, k) => ({ wch: k ? 14 : 34 }));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Results');
+    XLSX.writeFile(wb, `nesting-results-${today()}.xlsx`, { compression: true });
+  } catch (e) { alert(e.message.startsWith('The Excel library') ? e.message : 'Excel file could not be saved: ' + e.message); }
+}
+function resultRows(R, xl) {
+  const N = xl ? (n, d) => isFinite(n) ? +n.toFixed(d) : '' : tsv, T = xl ? (s => s) : xlText;
+  const { S, sheets, tot } = R, mass = R.mass;
+  const L = [];
+  L.push([T('Sheet nesting result'), R.date, APP_VERSION ? 'v' + APP_VERSION : '']);
+  S.sizes.forEach(x => L.push(['Sheet size (width; height mm)', N(x.W, 1), N(x.H, 1)]));
+  R.mats.forEach(m => { if (m.allowed.length < S.sizes.length) L.push([`Sheet sizes allowed${m.mat ? ' ' + m.mat : ''}`, m.allowed.map(sizeLabel).join(' · ')]); });
+  L.push(['Gap between parts (mm)', N(S.gap, 1)], ['Guillotine cuts', glTxt(S)], ...(S.gl ? [['Gap at guillotine cut (mm)', N(S.gl.g, 1)]] : []), ['Edge margin (mm)', N(S.margin, 1)], ['Rotation', S.rot ? 'yes' : 'no'], ['Edge margin on', edgeList(S)], ['Round reduced height up to (mm)', N(S.step, 1)], ['Keep full size if offcut under (mm)', N(S.minOff, 1)], ['Part size limits (max width; max height; max diagonal mm)', S.lim.W ? N(S.lim.W, 1) : '', S.lim.H ? N(S.lim.H, 1) : '', S.lim.D ? N(S.lim.D, 1) : '']);
+  R.over.forEach(p => L.push(['Over size limit, left out', T(p.id), T(p.why)]));
+  usedTypes(R).forEach(t => L.push([`Blank allowance ${t} (+width; +height mm)`, N(addOf(t, S.typeAdd).w, 1), N(addOf(t, S.typeAdd).h, 1)]));
+  if (mass) R.mats.forEach(m => L.push([`Material${m.mat ? ' ' + m.mat : ''} (thickness mm; density kg/m³; price €/kg)`, N(m.t, 2), N(m.rho, 0), N(m.price, 2)]));
+  L.push([]);
+  const hd = ['Sheet', 'Material', 'Sheet width (mm)', 'Sheet height (mm)', 'Parts', 'Parts area (m²)', 'Reduced height (mm)', 'Kept full size', 'Max sheet area (m²)', 'Loss max (m²)', 'Loss max (%)', 'Reduced sheet area (m²)', 'Loss reduced (m²)', 'Loss reduced (%)', 'Saved (m²)'];
+  if (mass) hd.push('Loss max (kg)', 'Loss reduced (kg)', 'Saved (kg)');
+  if (R.cost) hd.push('Loss max (€)', 'Loss reduced (€)', 'Saved (€)');
+  L.push(hd);
+  const r = (lab, x, n) => {
+    const a = [lab, x.mat !== undefined ? T(x.mat) : '', x.W ? N(x.W, 1) : '', x.H ? N(x.H, 1) : '', n, N(m2(x.A), 4), x.hRed !== undefined ? N(x.hRed, 1) : '', x.hRed !== undefined ? (x.full ? 'yes' : 'no') : '', N(m2(x.Smax), 4), N(m2(x.lossMax), 4), N(pct(x.lossMax, x.Smax), 2), N(m2(x.Sred), 4), N(m2(x.lossRed), 4), N(pct(x.lossRed, x.Sred), 2), N(m2(x.saved), 4)];
+    if (mass) a.push(N(x.kg.lossMax, 2), N(x.kg.lossRed, 2), N(x.kg.saved, 2));
+    if (R.cost) a.push(N(x.eur.lossMax, 2), N(x.eur.lossRed, 2), N(x.eur.saved, 2));
+    return a;
+  };
+  sheets.forEach((s, k) => L.push(r(k + 1, s, s.items.length)));
+  L.push(r('Total', { ...tot, hRed: undefined, mat: undefined, W: 0, H: 0 }, tot.n));
+  L.push([], ['Placements (X from left edge, Y from bottom edge)'], ['Sheet', 'Material', 'Part', 'Width (mm)', 'Height (mm)', 'Rotated', 'X (mm)', 'Y (mm)']);
+  sheets.forEach((s, k) => s.items.slice().sort((a, b) => a.y - b.y || a.x - b.x).forEach(it =>
+    L.push([k + 1, T(s.mat), T(R.parts[it.pi].id), N(it.w, 1), N(it.h, 1), it.r ? 'yes' : 'no', N(it.x, 1), N(it.y, 1)])));
+  return L;
+}
+/* ---------- Report for Word ---------- */
+const PAL = ['#9db4e8', '#e8b98a', '#a9d3b5', '#d9a5c4', '#e3d07f', '#9fd0d6', '#c3b2e6', '#e3a3a0'];
+function sheetPNG(s, R, num) {
+  const { W, H } = s, hr = s.hRed, yCut = H - hr;
+  const fs = Math.max(W, H) * 0.024;
+  const padT = fs * 0.6, padL = fs * 0.6, padB = fs * 2.8, padR = yCut > 0.5 ? fs * 3.6 : fs * 2.2;
+  const TW = W + padL + padR, TH = H + padT + padB;
+  const sc = Math.min(1200 / TW, 1400 / TH);
+  const c = document.createElement('canvas');
+  c.width = Math.round(TW * sc); c.height = Math.round(TH * sc);
+  const g = c.getContext('2d'), lw = 1 / sc;
+  const font = (px, bold) => `${bold ? 'bold ' : ''}${px}px Arial, Helvetica, sans-serif`;
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, c.width, c.height);
+  g.save(); g.scale(sc, sc); g.translate(padL, padT);
+  // offcut above the cut line
+  if (yCut > 0.5) {
+    g.fillStyle = '#e6f2ea'; g.fillRect(0, 0, W, yCut);
+    g.save(); g.beginPath(); g.rect(0, 0, W, yCut); g.clip();
+    g.strokeStyle = 'rgba(46,125,85,0.35)'; g.lineWidth = 2 * lw;
+    for (let x = -yCut; x < W; x += 16 * lw) { g.beginPath(); g.moveTo(x, yCut); g.lineTo(x + yCut, 0); g.stroke(); }
+    g.restore();
+  }
+  g.fillStyle = '#eef1f5'; g.fillRect(0, yCut, W, hr);
+  g.strokeStyle = '#7d8896'; g.lineWidth = 2 * lw; g.strokeRect(0, 0, W, H);
+  // parts with their position number
+  for (const it of s.items) {
+    const p = R.parts[it.pi], y = H - it.y - it.h, n = num ? num.get(it) : null;
+    g.fillStyle = PAL[it.pi % 8]; g.fillRect(it.x, y, it.w, it.h);
+    g.strokeStyle = '#2a3442'; g.lineWidth = 1.5 * lw; g.strokeRect(it.x, y, it.w, it.h);
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#141b24';
+    let f = Math.min(fs, it.h * 0.36);
+    g.font = font(f, true);
+    const tw = g.measureText(p.id).width;
+    if (tw > it.w * 0.86) { f *= it.w * 0.86 / tw; g.font = font(f, true); }
+    const roomForBadge = n && it.w > fs * 2.2 && it.h > fs * 2.2;
+    if (f >= fs * 0.45) g.fillText(p.id, it.x + it.w / 2, y + it.h / 2 + (roomForBadge && it.h < fs * 3.4 ? fs * 0.35 : 0));
+    else if (n) { const f2 = Math.min(fs * 0.8, it.h * 0.7, it.w * 0.45); g.font = font(f2, true); g.fillText(String(n), it.x + it.w / 2, y + it.h / 2); }
+    if (roomForBadge && f >= fs * 0.45) {
+      const r = fs * 0.62, cx = it.x + r + fs * 0.25, cy = y + r + fs * 0.25;
+      g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fillStyle = '#1b2633'; g.fill();
+      g.fillStyle = '#ffffff'; g.font = font(fs * (n > 9 ? 0.62 : 0.72), true); g.fillText(String(n), cx, cy + fs * 0.03);
+    }
+  }
+  if (s.cuts && s.cuts.length) { g.setLineDash([8 * lw, 6 * lw]); g.strokeStyle = '#555c66'; g.lineWidth = 1.5 * lw; for (const c of s.cuts) { g.beginPath(); g.moveTo(c.x1, H - c.y1); g.lineTo(c.x2, H - c.y2); g.stroke(); } g.setLineDash([]); }
+  // cut line
+  if (yCut > 0.5) {
+    g.setLineDash([14 * lw, 8 * lw]); g.strokeStyle = '#1f47c9'; g.lineWidth = 3.5 * lw;
+    g.beginPath(); g.moveTo(-padL, yCut); g.lineTo(W + fs * 0.6, yCut); g.stroke(); g.setLineDash([]);
+    if (yCut > fs * 1.5) { g.font = font(fs * 0.85); g.fillStyle = '#2e7d55'; g.textAlign = 'right'; g.textBaseline = 'middle'; g.fillText(`offcut ${dim(H - hr)} mm`, W - fs * 0.5, yCut / 2); }
+  }
+  // dimension lines
+  g.strokeStyle = '#3c4654'; g.fillStyle = '#1b2633'; g.lineWidth = 1.5 * lw;
+  const tick = fs * 0.35;
+  const hDim = (x1, x2, y, label) => {
+    g.beginPath(); g.moveTo(x1, y); g.lineTo(x2, y); g.moveTo(x1, y - tick); g.lineTo(x1, y + tick); g.moveTo(x2, y - tick); g.lineTo(x2, y + tick); g.stroke();
+    g.font = font(fs * 0.9, true); g.textAlign = 'center'; g.textBaseline = 'top'; g.fillText(label, (x1 + x2) / 2, y + tick + fs * 0.15);
+  };
+  const vDim = (y1, y2, x, label, color) => {
+    g.strokeStyle = color || '#3c4654'; g.fillStyle = color || '#1b2633';
+    g.beginPath(); g.moveTo(x, y1); g.lineTo(x, y2); g.moveTo(x - tick, y1); g.lineTo(x + tick, y1); g.moveTo(x - tick, y2); g.lineTo(x + tick, y2); g.stroke();
+    g.save(); g.translate(x + tick + fs * 0.2, (y1 + y2) / 2); g.rotate(-Math.PI / 2);
+    g.font = font(fs * 0.9, true); g.textAlign = 'center'; g.textBaseline = 'top'; g.fillText(label, 0, 0); g.restore();
+  };
+  hDim(0, W, H + fs * 0.9, `${dim(W)} mm`);
+  vDim(yCut, H, W + fs * 0.8, `${dim(hr)}`, yCut > 0.5 ? '#1f47c9' : null);
+  if (yCut > 0.5) vDim(0, H, W + fs * 2.3, `${dim(H)}`);
+  g.restore();
+  return { url: c.toDataURL('image/png'), w: c.width, h: c.height };
+}
+function buildReportDocx(R) {
+  const { S, sheets, tot } = R, mass = R.mass, cost = R.cost;
+  const INK = '1B2633', MUTED = '5B6676', LINE = 'D3D9E1', HEAD = 'EEF1F6', ZEBRA = 'F7F8FA', ACC = '1F47C9', GOOD = '2E7D55', WARN = 'A8481A';
+  const R_ = 'right';
+  const images = [];
+  // a cell value is a string/number or an array of runs: string | { t, b, color, sw }
+  const runsOf = (v, base) => {
+    if (!Array.isArray(v)) v = [v];
+    let x = '';
+    v.forEach(it => {
+      if (it && typeof it === 'object') {
+        if (it.sw) x += wRun('   ', { shd: it.sw.replace('#', ''), bdr: '2A3442', sz: 7 }) + wRun(' ', base);
+        if (it.t != null && it.t !== '') x += wRun(String(it.t), { ...base, ...(it.b ? { b: true } : {}), ...(it.color ? { color: it.color } : {}) });
+      } else if (it != null && it !== '') x += wRun(String(it), base);
+    });
+    return x;
+  };
+  const muted = t => ({ t, color: MUTED });
+  const bold = t => ({ t, b: true });
+  const sw = i => ({ sw: PAL[i % 8] });
+  const h2 = (t, br, sub) => wPara(wRun(t) + (sub ? wRun('  ' + sub, { b: false, sz: 10, color: MUTED }) : ''), { style: 'Heading2', pageBreak: br });
+  const dTable = (cols, rows, foot) => {
+    const trs = [{ header: true, cantSplit: true, cells: cols.map(c => ({ xml: wPara(runsOf(c.h, { b: true, sz: 8 }), { al: c.al }), fill: HEAD, borders: { bottom: [1.5, INK] }, vAlign: 'bottom' })) }];
+    rows.forEach((r, i) => trs.push({ cantSplit: true, cells: r.map((v, j) => ({ xml: wPara(runsOf(v, { sz: 9 }), { al: cols[j].al }), fill: i % 2 === 1 ? ZEBRA : undefined, borders: { bottom: [0.75, LINE] } })) }));
+    if (foot) trs.push({ cantSplit: true, cells: foot.map((v, j) => ({ xml: wPara(runsOf(v, { sz: 9, b: true }), { al: cols[j].al }), borders: { top: [1.5, INK] } })) });
+    return wTable(trs);
+  };
+  const pMax = pct(tot.lossMax, tot.Smax), pRed = pct(tot.lossRed, tot.Sred);
+  const types = usedTypes(R), mc = R.hasMat;
+  const srcParts = (R.src || '').split(' · ');
+  let o = '';
+
+  // Title band
+  const band = { bottom: [4, ACC] };
+  const left = wPara(wRun('SHEET NESTING REPORT' + (APP_VERSION ? ' · v' + APP_VERSION : ''), { sz: 8, color: 'AEBBD0', spacing: 1.5 }), { before: 8 }) +
+    wPara(wRun(srcParts[0] || 'Nesting result', { b: true, sz: 18, color: 'FFFFFF' }), { before: 3, after: srcParts.length > 1 ? 0 : 8 }) +
+    (srcParts.length > 1 ? wPara(wRun(srcParts.slice(1).join(' · '), { sz: 10, color: 'D5DDEA' }), { before: 1, after: 8 }) : '');
+  o += wTable([{ cantSplit: true, cells: [
+    { xml: left, fill: INK, borders: band },
+    { xml: wPara(wRun(R.date, { sz: 10, color: 'FFFFFF' }), { al: 'right', after: 8 }), fill: INK, borders: band, vAlign: 'bottom' }
+  ] }], { widths: [7400, 2464] });
+
+  const warn = (label, text) => wTable([{ cantSplit: true, cells: [{ xml: wPara(wRun(label, { b: true, color: WARN, sz: 9 }) + wRun(' ' + text, { sz: 9 })), fill: 'FBEEE5', borders: { left: [4, WARN] } }] }]);
+  if (R.over.length) o += warn('Over part size limits, not nested:', R.over.map(p => `${p.id} (${p.why})`).join(', '));
+  if (R.unfit.length) o += warn('Not nested:', `${R.unfit.length} part type${R.unfit.length > 1 ? 's' : ''} too large for the allowed sheets: ${R.unfit.map(p => `${p.id} (${dim(p.w)} × ${dim(p.h)} mm${p.mat ? ', ' + p.mat : ''})`).join(', ')}`);
+
+  // Key figures
+  const tile = (k, v, sub, color) => {
+    const bd = { top: [0.75, LINE], left: [0.75, LINE], bottom: [0.75, LINE], right: [0.75, LINE] };
+    return { borders: bd, xml: wPara(wRun(k, { b: true, sz: 7.5, color: MUTED, spacing: 0.6 }), { before: 2 }) +
+      wPara(wRun(String(v), { b: true, sz: 19, color: color || INK }), { before: 3, after: 2 }) +
+      wPara(wRun(sub, { sz: 8, color: MUTED }), { after: 2 }) };
+  };
+  o += wTable([{ cantSplit: true, cells: [
+    tile('SHEETS', sheets.length, sizeTxt(R) + (R.mats.length > 1 ? ` · ${R.mats.length} materials` : '')),
+    tile('PARTS NESTED', fmt(tot.n, 0), `${fmt(m2(tot.A), 2)} m² blank area`),
+    tile('LOSS, REDUCED SHEETS', `${fmt(pRed, 1)} %`, `${fmt(pMax, 1)} % on full sheets`),
+    tile('SAVED BY CUTTING', `${fmt(m2(tot.saved), 2)} m²`, [mass ? `${fmt(tot.kg.saved, 1)} kg` : '', cost ? `${fmt(tot.eur.saved, 2)} €` : ''].filter(Boolean).join(' · ') || `−${fmt(pMax - pRed, 1)} pp loss`, GOOD)
+  ] }]);
+
+  // Material balance
+  const balCols = [{ h: '' }, { h: 'Sheet area\nm²', al: R_ }, { h: 'Parts\nm²', al: R_ }, { h: 'Loss\nm²', al: R_ }, { h: 'Loss\n%', al: R_ }];
+  if (mass) balCols.push({ h: 'Sheet mass\nkg', al: R_ }, { h: 'Loss\nkg', al: R_ });
+  if (cost) balCols.push({ h: 'Sheet cost\n€', al: R_ }, { h: 'Loss\n€', al: R_ });
+  const balRow = (lab, area, loss) => { const r = [lab, fmt(m2(tot[area]), 3), fmt(m2(tot.A), 3), fmt(m2(tot[loss]), 3), fmt(pct(tot[loss], tot[area]), 1)];
+    if (mass) r.push(fmt(tot.kg[area], 1), fmt(tot.kg[loss], 1)); if (cost) r.push(fmt(tot.eur[area], 2), fmt(tot.eur[loss], 2)); return r; };
+  const balFoot = ['Saved', fmt(m2(tot.saved), 3), '', fmt(m2(tot.saved), 3), `−${fmt(pMax - pRed, 1)} pp`];
+  if (mass) balFoot.push(fmt(tot.kg.saved, 1), fmt(tot.kg.saved, 1)); if (cost) balFoot.push(fmt(tot.eur.saved, 2), fmt(tot.eur.saved, 2));
+  o += h2('Material balance') + dTable(balCols, [balRow('Full sheets', 'Smax', 'lossMax'), balRow('Reduced sheets', 'Sred', 'lossRed')], balFoot.map(v => [{ t: v, color: GOOD }]));
+
+  // Per material
+  if (R.mats.length > 1) {
+    const cols = [{ h: 'Material' }, { h: 'Sheets used' }, { h: 'Parts', al: R_ }, { h: 'Loss reduced\nm²', al: R_ }, { h: 'Loss reduced\n%', al: R_ }, { h: 'Saved\nm²', al: R_ }];
+    if (mass) cols.push({ h: 'Saved\nkg', al: R_ }); if (cost) cols.push({ h: 'Saved\n€', al: R_ });
+    o += h2('Per material') + dTable(cols, R.mats.map(m => { const r = [[bold(matLabel(m.mat))], `${m.count} · ${sizeListTxt(m.sizes)}`, m.n, fmt(m2(m.lossRed), 3), fmt(pct(m.lossRed, m.Sred), 1), fmt(m2(m.saved), 3)];
+      if (mass) r.push(fmt(m.kg.saved, 1)); if (cost) r.push(fmt(m.eur.saved, 2)); return r; }));
+  }
+
+  // Settings
+  const set = [
+    ['Sheet sizes', S.sizes.map(sizeLabel).join(', ') + ' mm'], ['Gap between parts', `${dim(S.gap)} mm`], ['Guillotine cuts', glTxt(S) + (S.gl ? `, gap at cut ${dim(S.gl.g)} mm` : '')],
+    ['Edge margin', `${dim(S.margin)} mm on ${edgeList(S)}`], ['90° rotation', S.rot ? 'Allowed' : 'Not allowed'],
+    ['Part size limits', limTxt(S.lim)], ['Round cut height up to', S.step > 0 ? `${dim(S.step)} mm` : 'Off'], ['Keep full if offcut under', S.minOff > 0 ? `${dim(S.minOff)} mm` : 'Off']
+  ];
+  const anyAllow = types.some(t => { const a = addOf(t, S.typeAdd); return a.w || a.h; });
+  if (types.length && !anyAllow) set.push(['Blank allowance', 'None, blank = finished size']);
+  const bl = { bottom: [0.75, LINE] };
+  const stRows = [];
+  for (let i = 0; i < set.length; i += 2) {
+    const cells = [];
+    [set[i], set[i + 1]].forEach(kv => {
+      cells.push({ xml: kv ? wPara(wRun(kv[0], { sz: 9, color: MUTED })) : '', borders: bl });
+      cells.push({ xml: kv ? wPara(wRun(kv[1], { sz: 9, b: true })) : '', borders: bl });
+    });
+    stRows.push({ cantSplit: true, cells });
+  }
+  o += h2('Settings') + wTable(stRows, { widths: [1973, 2959, 1973, 2959] });
+  const matCols = [{ h: 'Material' }, { h: 'Sheet sizes allowed (mm)' }];
+  if (mass) matCols.push({ h: 'Thickness\nmm', al: R_ }, { h: 'Density\nkg/m³', al: R_ }); if (cost) matCols.push({ h: 'Price\n€/kg', al: R_ });
+  o += dTable(matCols, R.mats.map(m => { const r = [[bold(matLabel(m.mat))], m.allowed.map(sizeLabel).join(', ')];
+    if (mass) r.push(fmt(m.t, 2), fmt(m.rho, 0)); if (cost) r.push(fmt(m.price, 2)); return r; }));
+  if (anyAllow) {
+    const tq = {}; R.parts.forEach(p => { if (p.type) tq[p.type] = (tq[p.type] || 0) + p.qty; });
+    o += dTable([{ h: 'Panel type' }, { h: 'Parts', al: R_ }, { h: 'Blank allowance, width mm', al: R_ }, { h: 'Blank allowance, height mm', al: R_ }],
+      types.map(t => { const a = addOf(t, S.typeAdd); return [[bold(t)], tq[t] || 0, a.w ? '+' + dim(a.w) : [muted('0')], a.h ? '+' + dim(a.h) : [muted('0')]]; }));
+  }
+
+  // Sheets overview
+  const sCols = [{ h: 'Sheet' }];
+  if (mc) sCols.push({ h: 'Material' });
+  sCols.push({ h: 'Sheet\nmm', al: R_ }, { h: 'Cut to height\nmm', al: R_ }, { h: 'Parts', al: R_ }, { h: 'Parts\nm²', al: R_ }, { h: 'Loss reduced\n%', al: R_ }, { h: 'Offcut saved\nm²', al: R_ });
+  const sRows = sheets.map((s, k) => { const r = [[bold(String(k + 1))]]; if (mc) r.push(s.mat || '–');
+    r.push(sizeLabel(s), s.full ? [`${dim(s.hRed)} `, muted('full')] : dim(s.hRed), s.items.length, fmt(m2(s.A), 3), fmt(pct(s.lossRed, s.Sred), 1), s.saved > 0 ? fmt(m2(s.saved), 3) : [muted('–')]); return r; });
+  const sFoot = ['Total']; if (mc) sFoot.push('');
+  sFoot.push('', '', tot.n, fmt(m2(tot.A), 3), fmt(pRed, 1), fmt(m2(tot.saved), 3));
+  o += h2('Sheets', false, `${sheets.length} sheets`) + dTable(sCols, sRows, sFoot);
+
+  // Parts list
+  const counts = {}; sheets.forEach(s => s.items.forEach(i => counts[i.pi] = (counts[i.pi] || 0) + 1));
+  const showBlank = R.parts.some(p => p.bw !== p.w || p.bh !== p.h);
+  const pCols = [{ h: 'Part' }]; if (types.length) pCols.push({ h: 'Type' }); if (mc) pCols.push({ h: 'Material' });
+  pCols.push({ h: types.length ? 'Finished\nmm' : 'Size\nmm', al: R_ }); if (showBlank) pCols.push({ h: 'Blank\nmm', al: R_ });
+  pCols.push({ h: 'Qty', al: R_ }, { h: 'Nested', al: R_ });
+  o += h2('Parts', false, `${R.parts.length} types · ${fmt(R.parts.reduce((t, p) => t + p.qty, 0), 0)} pcs`) + dTable(pCols, R.parts.map((p, i) => {
+    const r = [[sw(i), p.id]];
+    if (types.length) r.push(p.type || '–'); if (mc) r.push(p.mat || '–');
+    r.push(`${dim(p.w)} × ${dim(p.h)}`); if (showBlank) r.push(`${dim(p.bw)} × ${dim(p.bh)}`);
+    const n = counts[i] || 0; r.push(p.qty, n < p.qty ? [{ t: String(n), b: true, color: WARN }] : n); return r; }));
+
+  // One page per sheet
+  sheets.forEach((s, k) => {
+    const ordered = s.items.slice().sort((a, b) => a.y - b.y || a.x - b.x);
+    const num = new Map(ordered.map((it, n) => [it, n + 1]));
+    const img = sheetPNG(s, R, num);
+    const bin = atob(img.url.slice(img.url.indexOf(',') + 1)), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    images.push({ bytes });
+    // portrait: drawing up to 10,5 × 19,5 cm with the figures beside it, shrunk (not below 12 cm) so the
+    // positions table fits on the same page (~22,4 cm for drawing + table, ~0,66 cm per row); landscape: 16 × 15 cm under a row of tiles
+    const fitH = 22.4 - 0.66 * s.items.length;
+    const tall = isTall(s), cm = 360000, maxH = (tall ? (fitH >= 12 ? Math.min(19.5, fitH) : 19.5) : 15) * cm;
+    let cx = (tall ? 10.5 : 16) * cm, cy = Math.round(cx * img.h / img.w);
+    if (cy > maxH) { const f = maxH / cy; cx = Math.round(cx * f); cy = maxH; }
+    o += h2(`Sheet ${k + 1} of ${sheets.length}`, true, s.mat || '');
+    const info = [['SHEET', `${sizeLabel(s)} mm`], ['CUT TO', s.full ? `${dim(s.W)} × ${dim(s.hRed)} (full)` : `${dim(s.W)} × ${dim(s.hRed)} mm`], ['OFFCUT', s.H - s.hRed > 0 ? `${dim(s.H - s.hRed)} mm` : 'none'], ['PARTS', s.items.length], ['LOSS, REDUCED', `${fmt(pct(s.lossRed, s.Sred), 1)} %`]];
+    const key = t => wRun(t, { b: true, sz: 7, color: MUTED, spacing: 0.5 });
+    const pic = wImage(`rIdImg${images.length}`, images.length, cx, cy, `Sheet ${k + 1}`);
+    if (tall) {
+      const side = info.map(([k2, v], j) => wPara(key(k2), { before: j ? 8 : 0 }) + wPara(wRun(String(v), { b: true, sz: 11 }), { before: 1 })).join('') +
+        wPara(key('PARTS ON THIS SHEET'), { before: 14, after: 2 }) + sheetCounts(s).map(([pi, n]) => wPara(runsOf([sw(pi), R.parts[pi].id + '  ', muted(n + '×')], { sz: 9 }), { before: 2 })).join('');
+      const iw = Math.round(cx / 635) + 240;
+      o += wTable([{ cantSplit: true, cells: [{ xml: wPara(pic, { al: 'center' }) }, { xml: side, borders: { left: [0.75, LINE] } }] }], { widths: [iw, 9864 - iw] });
+    } else {
+      const bd = { top: [0.75, LINE], left: [0.75, LINE], bottom: [0.75, LINE], right: [0.75, LINE] };
+      o += wTable([{ cantSplit: true, cells: info.map(([k2, v]) => ({ borders: bd, xml: wPara(key(k2)) + wPara(wRun(String(v), { b: true, sz: 10.5 }), { before: 1 }) })) }]);
+      o += wPara(pic, { al: 'center', before: 6, after: 6 });
+    }
+    o += dTable([{ h: '#' }, { h: 'Part' }, { h: 'Width\nmm', al: R_ }, { h: 'Height\nmm', al: R_ }, { h: 'Rotated' }, { h: 'X\nmm', al: R_ }, { h: 'Y\nmm', al: R_ }],
+      ordered.map((it, n) => [[bold(String(n + 1))], [sw(it.pi), R.parts[it.pi].id], dim(it.w), dim(it.h), it.r ? 'yes' : [muted('no')], dim(it.x), dim(it.y)]));
+    o += wPara(wRun('X from the left edge and Y from the bottom edge of the sheet, to the lower-left corner of each part. Numbers match the drawing.', { sz: 7.5, color: MUTED }));
+  });
+  return buildDocx({ body: o, images, title: 'Sheet nesting report', footer: 'Sheet nesting report · ' + R.date, created: new Date().toISOString().replace(/\.\d+Z$/, 'Z') });
+}
+function repMsg(t, cls) { const m = $('#repMsg'); m.textContent = t; m.className = 'hint' + (cls ? ' ' + cls : ''); m.hidden = !t; }
+function saveReportDocx() {
+  repMsg('');
+  const name = `nesting-report-${today()}.docx`;
+  try {
+    const bytes = buildReportDocx(lastResult);
+    saveBlob(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), name);
+    repMsg('Report saved as ' + name + '.', 'ok');
+  } catch (e) { repMsg('The report could not be saved: ' + e.message, 'err'); }
+}
+async function copyResults() {
+  const text = buildTSV(lastResult), btn = $('#copyBtn');
+  try { await navigator.clipboard.writeText(text); btn.textContent = 'Copied'; setTimeout(() => btn.textContent = 'Copy for Excel', 1800); }
+  catch (e) { $('#copyBox').hidden = false; const a = $('#copyArea'); a.value = text; a.focus(); a.select(); }
+}
+
+if (APP_VERSION) {
+  document.getElementById('verTxt').textContent = 'v' + APP_VERSION;
+  const dlg = document.getElementById('logDlg'), body = document.getElementById('logBody');
+  document.getElementById('showLog').onclick = () => {
+    if (!body.innerHTML) body.innerHTML = mdToHTML(CHANGELOG);
+    dlg.showModal();
+  };
+  document.getElementById('logClose').onclick = () => dlg.close();
+  dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+} else document.getElementById('verWrap').hidden = true;
+
+renderParts();
+renderExPreview();
+</script>
+
+</body></html>
