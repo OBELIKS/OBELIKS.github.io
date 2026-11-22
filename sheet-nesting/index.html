@@ -121,6 +121,7 @@ details pre{background:var(--surface-2);border:1px solid var(--line);border-radi
 .rtable tfoot td{font-weight:500;border-top:2px solid var(--line);border-bottom:0}
 .rtable .pct{color:var(--muted)}
 .rtable .good{color:var(--saved)}
+.lab2{font-size:.82rem;color:var(--muted);font-weight:500;margin:8px 0 2px}
 
 .legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.85rem}
 .legend span{display:inline-flex;align-items:center;gap:6px}
@@ -167,6 +168,8 @@ svg g.pg:hover .part{stroke:var(--accent);stroke-width:2px}
 .exrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding-top:10px;border-top:1px solid var(--line)}
 .exrow select{flex:1 1 200px;min-width:0;font:inherit;font-size:.88rem;color:var(--fg);background:var(--surface-2);border:1px solid var(--line);border-radius:4px;padding:6px 8px}
 .exrow select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.field select{font:inherit;font-size:.92rem;color:var(--fg);background:var(--surface-2);border:1px solid var(--line);border-radius:4px;padding:6px 8px}
+.field select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .exlabel{font-size:.82rem;color:var(--muted);font-weight:500;width:100%}
 .expre{width:100%;max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:4px;background:var(--surface)}
 .expre table{width:100%}
@@ -256,10 +259,11 @@ svg g.pg:hover .part{stroke:var(--accent);stroke-width:2px}
         </div>
         <div class="row"><button class="btn small" id="addSize" type="button">+ Add sheet size</button></div>
         <div class="fields">
+          <div class="field" id="sizesMaxRow" hidden><label for="sizesMax">Sheet sizes to use</label><select id="sizesMax"></select></div>
           <div class="field"><label for="step">Round reduced height up to</label><div class="inwrap"><input id="step" inputmode="decimal" value="10"><span>mm</span></div></div>
           <div class="field"><label for="minOff">Keep full size if offcut under</label><div class="inwrap"><input id="minOff" inputmode="decimal" value="100"><span>mm</span></div></div>
         </div>
-        <p class="hint">With several sizes, each sheet gets the size that uses the least material after height reduction. Under Materials, tick which sizes each material comes in. Enter 0 in the rounding or offcut field to turn it off. Rounding is applied first, then the offcut check.</p>
+        <p class="hint">With several sizes, each sheet gets the size that uses the least material after height reduction. Under Materials, tick which sizes each material comes in. Enter 0 in the rounding or offcut field to turn it off. Rounding is applied first, then the offcut check. Best n: each material first tries every combination of n sizes for 30 % of the search time, then searches the best one.</p>
       </section>
 
       <section class="card" id="matsCard" aria-labelledby="h-mats">
@@ -287,6 +291,13 @@ svg g.pg:hover .part{stroke:var(--accent);stroke-width:2px}
             <label><input type="checkbox" id="gH"> Height – horizontal cuts</label>
             <label><input type="checkbox" id="gW"> Width – vertical cuts</label>
           </div>
+          <div class="edges" role="group" aria-labelledby="stLab">
+            <span class="lab" id="stLab">Cut stages</span>
+            <label><input type="radio" name="gStages" id="gS2"> 2</label>
+            <label><input type="radio" name="gStages" id="gS3"> 3</label>
+            <label><input type="radio" name="gStages" id="gS0" checked> Unlimited</label>
+          </div>
+          <div class="field"><label for="ngW">Non-guillotine penalty</label><div class="inwrap"><input id="ngW" inputmode="decimal" value="0,02"><span>m²</span></div></div>
           <p class="hint" style="grid-column:1/-1;margin:0">One ticked: only cuts through the whole sheet count. Both: also cuts through pieces already cut off. Each try takes longer with guillotine cuts: for large jobs, give the search more time.</p>
         </div>
         <p class="hint" id="topHint"></p>
@@ -373,7 +384,13 @@ svg g.pg:hover .part{stroke:var(--accent);stroke-width:2px}
             <div class="ptext" id="ptext"></div>
           </div>
         </div>
-        <div id="err" class="msg" hidden></div>
+        <div class="edges" role="group" aria-label="Search options" style="margin-top:10px">
+          <label><input type="checkbox" id="stopEarly"> Stop early when no improvement</label>
+          <span style="font-size:.82rem;color:var(--muted);font-weight:500">Engine</span>
+          <label><input type="radio" name="engine" id="engNew" checked> New (guillotine-aware)</label>
+          <label><input type="radio" name="engine" id="engClassic"> Classic</label>
+        </div>
+        <p class="hint" style="margin-top:6px">New uses the guillotine-aware search when guillotine cuts are on. Without guillotine cuts both settings use the classic search: the new one was not better there in the benchmark.</p>        <div id="err" class="msg" hidden></div>
         <div id="stale" class="stale" hidden>Inputs changed since this result. Run nesting again to update it.</div>
       </section>
       <div id="results" class="col">
@@ -392,6 +409,13 @@ svg g.pg:hover .part{stroke:var(--accent);stroke-width:2px}
 </div>
 
 <script type="text/markdown" id="changelog">
+## 1.6.0 – 22.11.2026
+
+- New search engine for guillotine cuts: with Height / Width cuts on it plans sheets that can almost always be cut with straight cuts only, and uses about 5 % less material than before (the old search stays in the app as "Classic").
+- Guillotine settings: limit the cut stages (2, 3 or unlimited) and set a penalty for parts that cannot be cut out with straight cuts.
+- "Sheet sizes to use": with several sheet sizes the app can try every combination of the best n sizes for each material and show the comparison.
+- "Stop early when no improvement" ends the search when it has stopped improving.
+
 ## 1.5.0 – 16.11.2026
 
 - Guillotine cuts: where two parts are separated by a straight cut through the sheet, the gap between them can be the smaller "gap at guillotine cut" instead of the normal gap between parts. Tick Height (horizontal cuts), Width (vertical cuts) or both.
@@ -468,6 +492,17 @@ svg g.pg:hover .part{stroke:var(--accent);stroke-width:2px}
 <script id="engine">
 /* ---------- Nesting engine (MaxRects, bottom-left rule, y measured from the sheet bottom) ---------- */
 const EPS = 1e-7;
+/* ---------- Formatting (Slovenian: 1.234,56); also used by the UI script ---------- */
+function fmt(n, d = 2) {
+  if (!isFinite(n)) return '–';
+  const neg = n < -1e-12;
+  let [i, f] = Math.abs(n).toFixed(d).split('.');
+  i = i.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return (neg ? '−' : '') + i + (f ? ',' + f : '');
+}
+const dim = n => fmt(n, Math.abs(n - Math.round(n)) < 1e-6 ? 0 : 1);
+const matLabel = m => m || 'No material';
+const sizeLabel = x => x.W > 0 && x.H > 0 ? `${dim(x.W)} × ${dim(x.H)}` : '–';
 function contains(a, b) {
   return b.x >= a.x - EPS && b.y >= a.y - EPS && b.x + b.w <= a.x + a.w + EPS && b.y + b.h <= a.y + a.h + EPS;
 }
@@ -517,7 +552,7 @@ function minSideOf(ctx) {
   return ctx.minSide;
 }
 function binFull(bin, ms) { for (const f of bin.free) if (f.w + EPS >= ms && f.h + EPS >= ms) return false; return true; }
-/* ---------- Guillotine mode (ctx.gl = { G, g, H, W } or null): across a straight cut the gap is g instead of G ---------- */
+/* ---------- Guillotine mode (ctx.gl = { G, g, H, W, stages, ngW } or null; stages 0 = unlimited cut stages, ngW = weight of a non-guillotine part in mm2): across a straight cut the gap is g instead of G ---------- */
 // Real rects { x, y, w, h } split along axis ('y' = horizontal cuts, 'x' = vertical cuts) into groups separated by a band >= g.
 function glSplit(rects, axis, g) {
   const y = axis === 'y', st = r => y ? r.y : r.x, en = r => y ? r.y + r.h : r.x + r.w;
@@ -534,7 +569,9 @@ function glSplit(rects, axis, g) {
   return { groups, bands };
 }
 // Cut tree: { axis, bands, kids } at a cut, { rects } at a leaf (no allowed cut).
+// gl.stages 0 / undefined = unlimited: the greedy tree (y first). 2 or 3 = at most that many cut levels, see glTreeLim.
 function glTree(rects, gl) {
+  if (gl.stages) return glTreeLim(rects, gl, 0).node;
   if (rects.length >= 2) for (const axis of ['y', 'x']) {
     if (axis === 'y' ? !gl.H : !gl.W) continue;
     const s = glSplit(rects, axis, gl.g);
@@ -542,6 +579,29 @@ function glTree(rects, gl) {
   }
   return { rects };
 }
+// Stage-limited tree and its cost (port of gl_tree_lim): at each node both axes are tried, the cheaper subtree wins
+// (y first on a tie). Cost = sum of (k - 1) over the leaves with k >= 2 parts, 1e6 per leaf that breaks the gap G.
+function glTreeLim(rects, gl, depth) {
+  if (rects.length >= 2 && depth < gl.stages) {
+    let best = null;
+    for (const axis of ['y', 'x']) {
+      if (axis === 'y' ? !gl.H : !gl.W) continue;
+      if (best && best.cost === 0) break;
+      const s = glSplit(rects, axis, gl.g);
+      if (s.groups.length > 1) {
+        let cost = 0; const kids = [];
+        for (const gr of s.groups) { const k = glTreeLim(gr, gl, depth + 1); kids.push(k.node); cost += k.cost; }
+        if (!best || cost < best.cost - 1e-9) best = { node: { axis, bands: s.bands, kids }, cost };
+      }
+    }
+    if (best) return best;
+  }
+  return { node: { rects }, cost: glLeafOk(rects, gl.G) ? Math.max(0, rects.length - 1) : 1e6 };
+}
+// Non-guillotine parts of a sheet: sum over the leaves of its (stage-limited) cut tree of (k - 1). 0 without gl.
+function ngNode(node) { return node.kids ? node.kids.reduce((s, k) => s + ngNode(k), 0) : Math.max(0, node.rects.length - 1); }
+function ngCount(items, ctx) { return ctx.gl ? ngNode(glTree(glRectsOf(items, ctx), ctx.gl)) : 0; }
+function ngLayout(layout, ctx) { return layout.sheets.reduce((s, sh) => s + ngCount(sh.items, ctx), 0); }
 function glLeaves(node, out) { if (node.kids) node.kids.forEach(k => glLeaves(k, out)); else for (const r of node.rects) out.push(r); return out; }
 function glRectsOf(items, ctx) {
   return items.map(it => { const p = ctx.insts[it.i]; return { x: it.x, y: it.y, w: it.r ? p.h : p.w, h: it.r ? p.w : p.h, it }; });
@@ -592,6 +652,18 @@ function glBands(node, out) {
   for (const b of node.bands) out.push({ y: node.axis === 'y', lo: b.lo, hi: b.hi });
   node.kids.forEach(k => glBands(k, out));
   return out;
+}
+// Segments of the guillotine cuts (sheet coordinates, y from the bottom): each cut runs across its region at the middle of its band.
+function glCutSegs(node, box, out) {
+  if (!node.kids) return;
+  const y = node.axis === 'y', n = node.kids.length;
+  let lo = y ? box.y1 : box.x1;
+  node.kids.forEach((kid, k) => {
+    const last = k === n - 1, hi = last ? (y ? box.y2 : box.x2) : (node.bands[k].lo + node.bands[k].hi) / 2;
+    if (!last) out.push(y ? { x1: box.x1, y1: hi, x2: box.x2, y2: hi } : { x1: hi, y1: box.y1, x2: hi, y2: box.y2 });
+    glCutSegs(kid, y ? { x1: box.x1, y1: lo, x2: box.x2, y2: hi } : { x1: lo, y1: box.y1, x2: hi, y2: box.y2 }, out);
+    lo = hi;
+  });
 }
 // Finishes a sheet: compact, try to add the parts in `left` (tight gaps first, then safe G gaps), compact again.
 // The refill bins are built once; items do not move during the refill.
@@ -722,7 +794,7 @@ function fillBin(rem, ctx, sz, ms) {
   return { bin, left, area };
 }
 function sizeRules(ctx) { return ['eff', 0.85, 0.7].concat(ctx.sizes.map((_, i) => ({ only: i }))); }
-function packMulti(order, ctx, rule) {
+function packMulti(order, ctx, rule, pk) {
   let rem = order, total = 0;
   const sheets = [], ms = minSideOf(ctx);
   while (rem.length) {
@@ -731,7 +803,7 @@ function packMulti(order, ctx, rule) {
       let pv = Infinity;
       ctx.sizes.forEach((sz, si) => {
         if (typeof ru === 'object' && ru.only !== si) return;
-        const f = fillBin(rem, ctx, sz, ms); if (!f.bin.items.length) return;
+        const f = pk && pk.choice ? fillBinP(rem, ctx, sz, ms, pk) : fillBin(rem, ctx, sz, ms); if (!f.bin.items.length) return;
         const c = ctx.cost(si, f.bin.top);
         const v = typeof ru === 'object' ? 0 : ru === 'eff' ? -f.area / c : c - f.area / ru;
         if (v < pv) { pv = v; pick = { si, f, c }; }
@@ -800,6 +872,136 @@ function toMulti(r, si, ctx) {
   let tot = 0, placed = 0;
   const sheets = r.sheets.map(s => { tot += ctx.cost(si, s.top); placed += s.items.length; return { si, items: s.items, top: s.top }; });
   return { sheets, score: tot + sheets.length * ctx.sheetPen + (ctx.insts.length - placed) * 1e15 };
+}
+/* ---------- Guillotine packer (search v2; port of nest-core/src/gpack.rs) ----------
+   Free-rectangle packing whose layouts are guillotine by construction. A part (inflated by d = gl.g with gl; ew x eh
+   without) goes to the bottom-left corner of a free rectangle; the rest of that rectangle is cut into a top piece
+   (horizontal cut, dir 1) and a right piece (vertical cut, dir 2), H first or V first. Free rectangles are disjoint and
+   carry the stage depth of the cut that made them, so the cut tree of a finished sheet is never deeper than gl.stages;
+   a remainder whose cut is not allowed (direction off, too deep) is left empty. Remainders that cannot hold the
+   smallest part are dropped. Bin = (UW - G + d) x (UH - G + d) with gl, top = max(y + inflated h) - d + G.
+   A packer is MAXRECTS (the classic code) or { choice, split, name }; the P functions dispatch on it. */
+const MAXRECTS = { name: 'maxrects' };
+const PACKERS = [MAXRECTS];
+for (const choice of ['BottomLeft', 'ShortSide', 'Area']) for (const split of ['HFirst', 'VFirst', 'Shorter', 'MinArea']) PACKERS.push({ choice, split, name: choice + '/' + split });
+function gInflated(ctx, i, d) { const p = ctx.insts[i]; return ctx.gl ? [p.w + d, p.h + d] : [p.ew, p.eh]; }
+function gBinNew(ctx, uw, uh) {
+  const gl = ctx.gl;
+  const b = gl
+    ? { free: [{ x: 0, y: 0, w: uw - gl.G + gl.g, h: uh - gl.G + gl.g, depth: 0, dir: 0 }], items: [], top: 0, gl: true, d: gl.g, stages: gl.stages || 0, okH: gl.H, okW: gl.W, mw: 0, mh: 0 }
+    : { free: [{ x: 0, y: 0, w: uw, h: uh, depth: 0, dir: 0 }], items: [], top: 0, gl: false, d: 0, stages: 0, okH: true, okW: true, mw: 0, mh: 0 };
+  if (!ctx.gMin) { // smallest inflated width / height of a part (with rotation both are the smallest side)
+    let mw = Infinity, mh = Infinity;
+    for (let i = 0; i < ctx.insts.length; i++) { const [w, h] = gInflated(ctx, i, b.d); if (w < mw) mw = w; if (h < mh) mh = h; }
+    if (ctx.rot) mw = mh = Math.min(mw, mh);
+    ctx.gMin = { mw, mh };
+  }
+  b.mw = ctx.gMin.mw; b.mh = ctx.gMin.mh;
+  return b;
+}
+const gDepthOk = (b, d) => b.stages === 0 || d <= b.stages;
+// Remainders kept by a cut order and the area left unused (cut not allowed).
+function gConfig(b, f, pw, ph, hFirst, dH, dV) {
+  const lw = f.w - pw, lh = f.h - ph, hasR = lw > EPS, hasT = lh > EPS, keep = []; let waste = 0;
+  const add = (rect, ok) => { if (ok && gDepthOk(b, rect.depth)) keep.push(rect); else waste += rect.w * rect.h; };
+  if (hFirst) {
+    if (hasT) add({ x: f.x, y: f.y + ph, w: f.w, h: lh, depth: dH, dir: 1 }, b.okH);
+    if (hasR) add({ x: f.x + pw, y: f.y, w: lw, h: hasT ? ph : f.h, depth: hasT ? dH + 1 : dV, dir: 2 }, b.okW);
+  } else {
+    if (hasR) add({ x: f.x + pw, y: f.y, w: lw, h: f.h, depth: dV, dir: 2 }, b.okW);
+    if (hasT) add({ x: f.x, y: f.y + ph, w: hasR ? pw : f.w, h: lh, depth: hasR ? dV + 1 : dH, dir: 1 }, b.okH);
+  }
+  return { keep, waste };
+}
+// Places instance i (inflated size w x h) by choice / split; false if it fits nowhere.
+function gPlace(b, i, w, h, rot, choice, split) {
+  const tryRot = rot && Math.abs(w - h) > EPS;
+  let bf = -1, br = false, bk = null;
+  for (let fi = 0; fi < b.free.length; fi++) {
+    const f = b.free[fi];
+    for (let r = 0; r < 2; r++) {
+      if (r && !tryRot) continue;
+      const pw = r ? h : w, ph = r ? w : h;
+      if (pw > f.w + EPS || ph > f.h + EPS) continue;
+      const lw = f.w - pw, lh = f.h - ph;
+      const key = choice === 'BottomLeft' ? [f.y + ph, f.x, 0] : choice === 'ShortSide' ? [Math.min(lw, lh), Math.max(lw, lh), f.y + ph] : [f.w * f.h - pw * ph, Math.min(lw, lh), f.y + ph];
+      let better = !bk;
+      if (bk) for (let k = 0; k < 3; k++) { if (key[k] < bk[k] - EPS) { better = true; break; } if (key[k] > bk[k] + EPS) break; }
+      if (better) { bf = fi; br = !!r; bk = key; }
+    }
+  }
+  if (bf < 0) return false;
+  const f = b.free.splice(bf, 1)[0], pw = br ? h : w, ph = br ? w : h;
+  b.items.push({ i, x: f.x, y: f.y, r: br });
+  if (f.y + ph > b.top) b.top = f.y + ph;
+  const lw = f.w - pw, lh = f.h - ph;
+  if (!(lw > EPS) && !(lh > EPS)) return true;
+  const dH = f.dir === 1 ? f.depth : f.depth + 1, dV = f.dir === 2 ? f.depth : f.depth + 1;
+  const prefH = split === 'HFirst' ? true : split === 'VFirst' ? false : split === 'Shorter' ? lw <= lh : pw * f.h > f.w * ph;
+  const cH = gConfig(b, f, pw, ph, true, dH, dV), cV = gConfig(b, f, pw, ph, false, dH, dV);
+  const first = prefH ? cH : cV, second = prefH ? cV : cH, pick = second.waste < first.waste - EPS ? second : first;
+  for (const r of pick.keep) if (r.w + EPS >= b.mw && r.h + EPS >= b.mh) b.free.push(r);
+  return true;
+}
+// Puts rem in order on one sheet; returns the bin and the parts that did not fit.
+function gFill(rem, ctx, uw, uh, pk) {
+  const bin = gBinNew(ctx, uw, uh), left = [];
+  for (let k = 0; k < rem.length; k++) {
+    if (!bin.free.length) { for (let q = k; q < rem.length; q++) left.push(rem[q]); break; } // sheet full
+    const [w, h] = gInflated(ctx, rem[k], bin.d);
+    if (!gPlace(bin, rem[k], w, h, ctx.rot, pk.choice, pk.split)) left.push(rem[k]);
+  }
+  return { bin, left };
+}
+// Items and top of a finished bin; with gl the sheet is compacted if that lowers the top and stays valid and no less guillotine.
+function gFinish(bin, ctx, uw, uh) {
+  const top = bin.top + (ctx.gl ? ctx.gl.G - ctx.gl.g : 0), items = bin.items;
+  if (bin.gl && items.length) {
+    const it2 = items.map(it => ({ ...it })), t2 = glCompact(it2, ctx);
+    if (t2 < top - EPS && glCheck(it2, ctx, { UW: uw, UH: uh }) && ngCount(it2, ctx) <= ngCount(items, ctx)) return { items: it2, top: t2 };
+  }
+  return { items, top };
+}
+function packAllP(order, ctx, pk) {
+  if (!pk.choice) return packAll(order, ctx);
+  let rem = order, sumTop = 0; const sheets = [];
+  while (rem.length) {
+    const { bin, left } = gFill(rem, ctx, ctx.UW, ctx.UH, pk);
+    if (!bin.items.length) break;
+    const f = gFinish(bin, ctx, ctx.UW, ctx.UH);
+    sumTop += f.top; sheets.push({ si: 0, items: f.items, top: f.top }); rem = left;
+  }
+  return { sheets, score: sheets.length * 1e12 + sumTop };
+}
+function packOneP(order, ctx, si, pk) {
+  if (!pk.choice) return packOne(order, ctx, si);
+  const sz = si === undefined ? ctx : ctx.sizes[si], { bin, left } = gFill(order, ctx, sz.UW, sz.UH, pk);
+  if (left.length || (ctx.gl && !bin.items.length)) return null;
+  return gFinish(bin, ctx, sz.UW, sz.UH);
+}
+function fillBinP(rem, ctx, sz, ms, pk) {
+  if (!pk.choice) return fillBin(rem, ctx, sz, ms);
+  const { bin, left } = gFill(rem, ctx, sz.UW, sz.UH, pk);
+  let area = 0; for (const it of bin.items) { const p = ctx.insts[it.i]; area += p.ew * p.eh; }
+  const f = gFinish(bin, ctx, sz.UW, sz.UH);
+  return { bin: { items: f.items, top: f.top }, left, area };
+}
+function packMultiP(order, ctx, rule, pk) { return packMulti(order, ctx, rule, pk); }
+/* ---------- v2 score (port of search2.rs layout_score / sheet_sc) ----------
+   Score of a layout = sum of cost(si, top) + sheets x pen + ngW x non-guillotine parts + unplaced x 1e15, with
+   pen = ctx.sheetPen (0,5 % of the blank area if unset) and cost = ctx.cost (W x top if the ctx has none). */
+const v2Pen = ctx => ctx.sheetPen || 0.005 * ctx.insts.reduce((s, p) => s + p.ew * p.eh, 0);
+const v2Cost = ctx => ctx.cost || ((si, top) => ctx.sizes[si].W * top);
+// ngFree = the sheet was made by a guillotine packer, so its non-guillotine count is 0 without counting
+function sheetSc(ctx, s, ngFree, pen, cost) {
+  let v = cost(s.si || 0, s.top) + pen;
+  if (!ngFree && ctx.gl && ctx.gl.ngW > 0) v += ctx.gl.ngW * ngCount(s.items, ctx);
+  return v;
+}
+function layoutScore(ctx, sheets) {
+  const pen = v2Pen(ctx), cost = v2Cost(ctx); let s = 0, placed = 0;
+  for (const sh of sheets) { s += sheetSc(ctx, sh, false, pen, cost); placed += sh.items.length; }
+  return s + (ctx.insts.length - placed) * 1e15;
 }
 const rnd = n => Math.floor(Math.random() * n);
 function mutate(order) {
@@ -916,7 +1118,322 @@ function searchRefine(g, ctx) {
     if (r && r.top < sh.top - EPS) sheets[k] = r;
   }
 }
-</script>
+/* ---------- Search v2 (port of nest-core/src/search2.rs): late acceptance hill climbing over complete layouts ----------
+   Several packers (MaxRects and the 12 guillotine variants of PACKERS) and a score that prefers guillotine layouts
+   (see layoutScore). One state per group: the current layout (cur) with its order, packer and size rule, plus the best
+   layout in g.best ({ sheets, score }, same shape as the classic group). A move builds a candidate (a whole new layout,
+   or a "part": some sheets removed / replaced / appended, scored without building the layout) and the late acceptance
+   rule takes it when its score is <= the score g.tune.l steps ago or <= the current score. Same frac-free call as
+   searchStep: search2Step(g, ctx). Layout totals are sums of per-sheet scores (sc), summed in layout order. */
+const V2_L = 50, V2_P_ORDER = 0.30, V2_P_PACKER = 0.05, V2_P_RULE = 0.05, V2_P_REPACK = 0.45, V2_P_DROP = 0.15;
+const V2_P_MAXRECTS_OFF = 0.7; // share of MaxRects among the random packer picks when guillotine mode is off
+// the rest of the move shares re-nests one sheet
+const V2_TUNE = { l: V2_L, pOrder: V2_P_ORDER, pPacker: V2_P_PACKER, pRule: V2_P_RULE, pRepack: V2_P_REPACK, pDrop: V2_P_DROP };
+const concatOrder = sheets => { const o = []; for (const s of sheets) for (const it of s.items) o.push(it.i); return o; };
+// A layout with the score of every sheet and the total. Sheets get si 0 when the packer left it out.
+function v2Lay(g, ctx, sheets, ngFree) {
+  const sc = []; let placed = 0;
+  for (const s of sheets) { if (s.si === undefined) s.si = 0; sc.push(sheetSc(ctx, s, ngFree, g.pen, g.costFn)); placed += s.items.length; }
+  const unplaced = ctx.insts.length - placed;
+  let tot = 0; for (const c of sc) tot += c;
+  return { sheets, sc, total: tot + unplaced * 1e15, unplaced };
+}
+function v2RandPk(g, ctx) {
+  // without guillotine mode the guillotine variants are only a source of diversity: MaxRects most of the time
+  if (!ctx.gl && Math.random() < V2_P_MAXRECTS_OFF) return MAXRECTS;
+  return PACKERS[rnd(PACKERS.length)];
+}
+function v2Repack(g, ctx, order, pk, rule) {
+  const l = ctx.sizes.length > 1 ? packMultiP(order, ctx, rule, pk) : packAllP(order, ctx, pk);
+  return v2Lay(g, ctx, l.sheets, !!pk.choice);
+}
+// The emptiest of 3 random sheets.
+function v2Emptiest(g, ctx) {
+  const sh = g.cur.sheets, n = sh.length, fill = s => { let a = 0; for (const it of s.items) { const p = ctx.insts[it.i]; a += p.ew * p.eh; } return a / g.costFn(s.si, s.top); };
+  let lo = rnd(n), lf = fill(sh[lo]);
+  for (let t = 0; t < 2; t++) { const i = rnd(n), f = fill(sh[i]); if (f < lf) { lo = i; lf = f; } }
+  return lo;
+}
+// Candidate that removes, replaces and appends sheets; its total is summed in layout order.
+function v2Part(g, removed, repl, added) {
+  let s = 0;
+  g.cur.sc.forEach((c, k) => { if (removed.includes(k)) return; const r = repl.find(x => x[0] === k); s += r ? r[2] : c; });
+  for (const a of added) s += a[1];
+  return { removed, repl, added, total: s + g.cur.unplaced * 1e15 };
+}
+// Re-nest 2-3 sheets with a random order, packer and (several sizes) rule.
+function v2RepackMove(g, ctx) {
+  const n = g.cur.sheets.length; if (n < 2) return null;
+  const pick = [v2Emptiest(g, ctx)], k = n >= 3 && Math.random() < 0.3 ? 3 : 2;
+  while (pick.length < k) { const i = rnd(n); if (!pick.includes(i)) pick.push(i); }
+  const ids = []; for (const i of pick) for (const it of g.cur.sheets[i].items) ids.push(it.i);
+  const order = randOrder(ids, ctx), pk = v2RandPk(g, ctx), multi = ctx.sizes.length > 1;
+  const rule = multi ? g.rules[rnd(g.rules.length)] : g.curRule;
+  const r = multi ? packMultiP(order, ctx, rule, pk) : packAllP(order, ctx, pk);
+  let placed = 0; for (const s of r.sheets) placed += s.items.length;
+  if (placed !== ids.length) return null;
+  return v2Part(g, pick, [], r.sheets.map(s => { if (s.si === undefined) s.si = 0; return [s, sheetSc(ctx, s, !!pk.choice, g.pen, g.costFn)]; }));
+}
+// Empty the emptiest of 3 random sheets by putting its parts (largest first) onto the other sheets.
+function v2DropMove(g, ctx) {
+  const sh = g.cur.sheets, n = sh.length; if (n < 2) return null;
+  const v = v2Emptiest(g, ctx), area = i => ctx.insts[i].ew * ctx.insts[i].eh, byArea = (a, b) => area(b) - area(a);
+  const work = new Array(n).fill(null), parts = sh[v].items.map(it => it.i).sort(byArea), others = [];
+  for (let i = 0; i < n; i++) if (i !== v) others.push(i);
+  for (const p of parts) {
+    let placed = false;
+    for (const k of shuffled(others)) {
+      const s = work[k] ? work[k][0] : sh[k], si = s.si, ids = s.items.map(it => it.i).concat(p), pk = v2RandPk(g, ctx);
+      const r = packOneP(ids.slice().sort(byArea), ctx, si, pk) || packOneP(randOrder(ids, ctx), ctx, si, pk);
+      if (r) { const ns = { si, items: r.items, top: r.top }; work[k] = [ns, sheetSc(ctx, ns, !!pk.choice, g.pen, g.costFn)]; placed = true; break; }
+    }
+    if (!placed) return null;
+  }
+  const repl = []; work.forEach((w, k) => { if (w) repl.push([k, w[0], w[1]]); });
+  return v2Part(g, [v], repl, []);
+}
+// Re-nest one sheet (the last, or the emptiest of 3) with a random order and packer; several sizes: maybe on another size.
+function v2RenestMove(g, ctx) {
+  const n = g.cur.sheets.length; if (!n) return null;
+  const k = Math.random() < 0.5 ? n - 1 : v2Emptiest(g, ctx), old = g.cur.sheets[k];
+  const order = randOrder(old.items.map(it => it.i), ctx), pk = v2RandPk(g, ctx);
+  const si = ctx.sizes.length > 1 && Math.random() < 0.5 ? rnd(ctx.sizes.length) : old.si;
+  const r = packOneP(order, ctx, si, pk); if (!r) return null;
+  const ns = { si, items: r.items, top: r.top };
+  return v2Part(g, [], [[k, ns, sheetSc(ctx, ns, !!pk.choice, g.pen, g.costFn)]], []);
+}
+function v2Apply(g, p) {
+  const old = g.cur.sheets, sheets = [], sc = [];
+  old.forEach((s, k) => {
+    if (p.removed.includes(k)) return;
+    const r = p.repl.find(x => x[0] === k);
+    if (r) { sheets.push(r[1]); sc.push(r[2]); } else { sheets.push(s); sc.push(g.cur.sc[k]); }
+  });
+  for (const a of p.added) { sheets.push(a[0]); sc.push(a[1]); }
+  g.cur = { sheets, sc, total: p.total, unplaced: g.cur.unplaced };
+}
+function v2Consider(g, c) {
+  const v = g.it % g.hist.length; g.it++;
+  if (c.total <= g.hist[v] + EPS || c.total <= g.cur.total + EPS) {
+    if (c.lay) { g.cur = c.lay; g.curPk = c.pk; g.curRule = c.rule; } else v2Apply(g, c);
+    g.curOrder = concatOrder(g.cur.sheets);
+    if (g.cur.total < g.best.score - EPS) { g.best = { sheets: g.cur.sheets, score: g.cur.total }; g.bestOrder = g.curOrder; g.rule = g.curRule; }
+  }
+  g.hist[v] = g.cur.total;
+}
+// One iteration for one group (frac is not used).
+function search2Step(g, ctx) {
+  const t = g.tune, multi = ctx.sizes.length > 1, pRule = multi ? t.pRule : 0;
+  const c1 = t.pOrder - pRule, c2 = c1 + t.pPacker, c3 = c2 + pRule, c4 = c3 + t.pRepack, c5 = c4 + t.pDrop, x = Math.random();
+  let cand = null;
+  const full = (order, pk, rule) => { const lay = v2Repack(g, ctx, order, pk, rule); return { lay, pk, rule, total: lay.total }; };
+  if (x < c1) cand = full(Math.random() < 0.06 ? noisyOrder(ctx) : mutate(g.curOrder), g.curPk, g.curRule);
+  else if (x < c2) { let pk = v2RandPk(g, ctx); while (pk === g.curPk) pk = v2RandPk(g, ctx); cand = full(g.curOrder, pk, g.curRule); }
+  else if (x < c3) cand = full(g.curOrder, g.curPk, g.rules[rnd(g.rules.length)]);
+  else if (x < c4) cand = v2RepackMove(g, ctx);
+  else if (x < c5) cand = v2DropMove(g, ctx);
+  else cand = v2RenestMove(g, ctx);
+  if (cand) v2Consider(g, cand);
+}
+// Start layout: best of the 6 seed orders x 3 start packers x rules. ctx gets a cost function (W x top if none) and the sheet penalty.
+function initGroup2(ctx, tune) {
+  tune = { ...(tune || V2_TUNE) };
+  if (!ctx.cost) ctx.cost = v2Cost(ctx);
+  if (!ctx.sheetPen) ctx.sheetPen = v2Pen(ctx);
+  const multi = ctx.sizes.length > 1, rules = multi ? sizeRules(ctx) : ['eff'];
+  const g = { v2: true, tune, rules, pen: ctx.sheetPen, costFn: ctx.cost, it: 0 };
+  const starts = [MAXRECTS, PACKERS.find(p => p.name === 'BottomLeft/HFirst'), PACKERS.find(p => p.name === 'ShortSide/HFirst')];
+  let best = null, count = 0;
+  for (const o of seedOrders(ctx)) for (const pk of starts) for (const ru of rules) {
+    const l = multi ? packMultiP(o, ctx, ru, pk) : packAllP(o, ctx, pk), lay = v2Lay(g, ctx, l.sheets, !!pk.choice);
+    count++;
+    if (!best || lay.total < best.lay.total) best = { lay, pk, ru };
+  }
+  const order = concatOrder(best.lay.sheets);
+  Object.assign(g, { best: { sheets: best.lay.sheets, score: best.lay.total }, bestOrder: order, rule: best.ru, cur: best.lay, curOrder: order.slice(), curPk: best.pk, curRule: best.ru, hist: new Array(Math.max(1, tune.l)).fill(best.lay.total), initCount: count });
+  return g;
+}
+
+/* ---------- Sheet size choice (port of nest-model/src/choose.rs and the choice part of run.rs prepare) ----------
+   "Sheet sizes to use" = Best k: per material every combination of k of its ticked sizes is searched for 30 % of the
+   time (screening), the winner by layoutScore then gets the rest. Here: the combinations and their ranking. */
+const MAX_CANDS = 24;   // at most this many combinations are tried over all materials; more are cut down by a quick pack
+const MAX_COMBOS = 500; // most combinations ranked per material and over all materials; more is an error
+const CHOICE_SCREEN = 0.3; // share of the search time for comparing the combinations
+// Binomial coefficient n over k; Infinity above 2^64 - 1 (like the saturating usize of the Rust code).
+function nChooseK(n, k) {
+  if (k > n) return 0;
+  k = Math.min(k, n - k);
+  let r = 1n;
+  for (let i = 1; i <= k; i++) { r = r * BigInt(n - k + i) / BigInt(i); if (r > 18446744073709551615n) return Infinity; }
+  return Number(r);
+}
+// All k-element subsets of 0..n-1 as sorted index lists, in lexicographic order.
+function subsets(n, k) {
+  const out = [];
+  const rec = (start, cur) => {
+    if (cur.length === k) { out.push(cur.slice()); return; }
+    for (let i = start; i < n; i++) { if (n - i < k - cur.length) break; cur.push(i); rec(i + 1, cur); cur.pop(); }
+  };
+  if (k > 0 && k <= n) rec(0, []);
+  return out;
+}
+// Note under a size choice table; cap = [kept, total] when combinations were left out, else null.
+function choiceNote(cap) {
+  let t = 'Each combination was tried for 30 % of the search time; the chosen one got the rest. Sheets and reduced area in this table are from that comparison; the results come from the full search on the chosen sizes.';
+  if (cap) t += ` Only the ${cap[0]} most promising of ${cap[1]} combinations were tried.`;
+  return t;
+}
+// Does a part blank ew x eh (gap included) fit on an empty sheet of size z?
+const partFits = (rot, z, ew, eh) => (ew <= z.UW + EPS && eh <= z.UH + EPS) || (rot && eh <= z.UW + EPS && ew <= z.UH + EPS);
+// The search context of one material for the sizes szs: the cost (reduced sheet area) is always set, search v2 needs it
+// (the classic search decides "several sizes" by sizes.length, so a cost on one size changes nothing).
+function makeGroupCtx(S, E, insts, szs, gl) {
+  const cost = (si, top) => szs[si].W * reducedH(szs[si].H, E.b + top - S.gap, S, E).hRed;
+  const ctx = { insts, UW: szs[0].UW, UH: szs[0].UH, rot: S.rot, sizes: szs, cost };
+  if (gl) ctx.gl = gl;
+  return ctx;
+}
+// Combinations for one material (indexes into szs): { cands } or { error }. k = 0 or k >= szs.length: no choice, cands = [].
+function groupCands(S, insts, szs, k, mat) {
+  if (!(k > 0 && szs.length > k)) return { cands: [] };
+  const c = nChooseK(szs.length, k);
+  if (c > MAX_COMBOS) return { error: `Best ${k} of the ${szs.length} sheet sizes ticked for ${matLabel(mat)} gives ${isFinite(c) ? fmt(c, 0) : '18.446.744.073.709.551.615'} combinations; at most ${fmt(MAX_COMBOS, 0)} can be compared. Choose fewer sheet sizes to use or untick some sizes.` };
+  const cands = subsets(szs.length, k).filter(cd => insts.every(p => cd.some(i => partFits(S.rot, szs[i], p.ew, p.eh))));
+  if (!cands.length) return { error: `No ${k} of the sheet sizes ticked for ${matLabel(mat)} fit every part. Choose more sheet sizes to use.` };
+  return { cands };
+}
+// More than MAX_CANDS combinations: keeps the most promising ones per group, ranked by one deterministic quick pack
+// (parts by descending area, size rule 'eff') scored with layoutScore; ranks without guillotine cuts (fast, the screening
+// search keeps gl). Every choosing group keeps at least 2 (1 when 2 x groups > MAX_CANDS). groups: { insts, sizes, cands }.
+// Returns [kept, total] if it cut, else null.
+function capCands(S, E, groups) {
+  const total = groups.reduce((s, g) => s + g.cands.length, 0);
+  if (total <= MAX_CANDS) return null;
+  const choosing = groups.filter(g => g.cands.length).length, minShare = 2 * choosing > MAX_CANDS ? 1 : 2;
+  const share = groups.map(g => g.cands.length ? Math.min(Math.max(Math.floor(MAX_CANDS * g.cands.length / total), minShare), g.cands.length) : 0);
+  while (share.reduce((s, x) => s + x, 0) > MAX_CANDS) { // take one from the largest share above the minimum (lowest index on a tie)
+    let pick = -1;
+    share.forEach((x, i) => { if (x > minShare && (pick < 0 || x > share[pick])) pick = i; });
+    if (pick < 0) break;
+    share[pick]--;
+  }
+  groups.forEach((g, gi) => {
+    if (!g.cands.length) return;
+    const order = g.insts.map((_, i) => i).sort((a, b) => g.insts[b].ew * g.insts[b].eh - g.insts[a].ew * g.insts[a].eh);
+    const ranked = g.cands.map((c, ci) => {
+      const ctx = makeGroupCtx(S, E, g.insts, c.map(i => g.sizes[i]), null);
+      return [layoutScore(ctx, packMulti(order, ctx, 'eff').sheets), ci];
+    });
+    ranked.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const keep = ranked.slice(0, share[gi]).map(r => r[1]).sort((a, b) => a - b);
+    g.cands = keep.map(ci => g.cands[ci]);
+  });
+  return [groups.reduce((s, g) => s + g.cands.length, 0), total];
+}
+// Total check over all materials, then the cap: { cap } or { error }. groups: { insts, sizes, cands }.
+function finishChoice(S, E, groups) {
+  const total = groups.reduce((s, g) => s + g.cands.length, 0);
+  if (total > MAX_COMBOS) return { error: `The sheet size choice gives ${fmt(total, 0)} combinations over all materials; at most ${fmt(MAX_COMBOS, 0)} can be compared. Choose fewer sheet sizes to use.` };
+  return { cap: capCands(S, E, groups) };
+}
+// Test helper (pure): the choice part of the run setup for sheet sizes wh = [[W, H], ...] (gap 5, margin 10, step 10, min offcut 100,
+// rotation on) and parts { w, h, qty, mat }, in the order of startRun. Returns { error } or { groups: [{ mat, sizes, insts, cands }], cap }.
+function prepareChoice(wh, k, parts) {
+  const S = { gap: 5, step: 10, minOff: 100, rot: true }, E = { l: 10, r: 10, b: 10, t: 10 }, groups = [];
+  const szs = wh.map(([W, H], i) => ({ id: 's' + (i + 1), W, H, UW: W - E.l - E.r + S.gap, UH: H - E.b - E.t + S.gap }));
+  const mats = [...new Set(parts.map(p => p.mat || ''))].sort();
+  for (const mat of mats) {
+    const insts = [];
+    parts.filter(p => (p.mat || '') === mat).forEach((p, pi) => {
+      const ew = p.w + S.gap, eh = p.h + S.gap;
+      if (!szs.some(z => partFits(S.rot, z, ew, eh))) return;
+      for (let q = 0; q < p.qty; q++) insts.push({ pi, w: p.w, h: p.h, ew, eh });
+    });
+    if (!insts.length) continue;
+    const r = groupCands(S, insts, szs, k, mat);
+    if (r.error) return { error: r.error };
+    groups.push({ mat, sizes: szs, insts, cands: r.cands });
+  }
+  const f = finishChoice(S, E, groups);
+  return f.error ? { error: f.error } : { groups, cap: f.cap };
+}
+/* ---------- Run controller (port of nest-model run_choice; no DOM, driven by the UI step loop or by tests) ----------
+   groups: one per material { mat, sizes, insts, cands, ... } (cands from groupCands / finishChoice).
+   stage 0: no size choice, the groups are the search units (state assigned onto the group object).
+   stage 1: screening: one unit per combination of a choosing group and a copy of the full context for the other groups, all
+            searched round robin for CHOICE_SCREEN of the time; the winner per group (lowest layoutScore) is kept with its layout.
+   stage 2: the winners (and the other groups again from scratch) get the rest; at the end the better of the screening layout and
+            the final layout (layoutScore on the winner sizes) is the group's best. After stage 1, group.sizes / ctx / multi are the
+            winner's (si of the layouts refers to them) and run.choice holds the combinations tried. Stop in stage 1 keeps the screening
+            layouts. The engine setting New = search v2 only with guillotine mode on (benchmark gate, tests/v2/v2-vs-classic.txt). */
+const useV2Engine = S => S.engine !== 'classic' && !!S.gl;
+const copyCtx = ctx => { const c = { insts: ctx.insts, UW: ctx.UW, UH: ctx.UH, rot: ctx.rot, sizes: ctx.sizes, cost: ctx.cost }; if (ctx.gl) c.gl = ctx.gl; return c; };
+function newRun(S, E, groups, cap) {
+  const v2 = useV2Engine(S), run = { S, E, groups, v2, stage: 0, gi: 0, iter: 0, choice: [], choiceCap: cap || null, win: null, units: null };
+  groups.forEach(g => { g.ctx = makeGroupCtx(S, E, g.insts, g.sizes, S.gl); g.multi = g.sizes.length > 1; });
+  if (!groups.some(g => g.cands && g.cands.length)) { run.units = groups; groups.forEach(g => Object.assign(g, v2 ? initGroup2(g.ctx) : initGroup(g.ctx))); }
+  else {
+    run.stage = 1; run.units = [];
+    groups.forEach((g, owner) => {
+      if (!g.cands.length) run.units.push({ owner, cand: null, ctx: copyCtx(g.ctx) });
+      else g.cands.forEach((c, ci) => run.units.push({ owner, cand: ci, ctx: makeGroupCtx(S, E, g.insts, c.map(i => g.sizes[i]), S.gl) }));
+    });
+    run.units.forEach(u => Object.assign(u, v2 ? initGroup2(u.ctx) : initGroup(u.ctx)));
+  }
+  run.iter = run.units.reduce((s, u) => s + (u.v2 ? u.initCount : 6 * (u.ctx.sizes.length > 1 ? u.rules.length : 1)), 0);
+  return run;
+}
+// One search step on the next unit; frac = elapsed / budget of the current stage.
+function runStep(run, frac) {
+  const u = run.units[run.gi++ % run.units.length];
+  if (u.v2) search2Step(u, u.ctx); else searchStep(u, u.ctx, frac);
+  run.iter++;
+}
+// Layouts, sheets and the total of the units' best layouts, for the progress text (screening scales the sum to the groups).
+function runSheets(run) {
+  const sum = run.units.reduce((s, u) => s + u.best.sheets.length, 0);
+  if (run.stage !== 1) return sum;
+  const ng = run.groups.length;
+  return Math.max(Math.ceil(sum * ng / run.units.length), sum > 0 ? ng : 0);
+}
+// Summed v2 score of the best layouts (for "stop early"); each unit on its own context.
+function runScore(run) { return run.units.reduce((s, u) => s + layoutScore(u.ctx, u.best.sheets), 0); }
+// End of the screening stage: scores and winners; returns true when the run is over (stopped), else starts stage 2.
+function runEndScreening(run, stopped) {
+  const { S, E, groups } = run, rows = groups.map(() => []), best = groups.map(() => null);
+  run.units.forEach(u => {
+    if (u.cand === null) return;
+    const g = groups[u.owner], lay = u.best, score = layoutScore(u.ctx, lay.sheets);
+    let red = 0; for (const s of lay.sheets) red += u.ctx.cost(s.si || 0, s.top);
+    rows[u.owner].push({ sizes: g.cands[u.cand].map(i => [g.sizes[i].W, g.sizes[i].H]), sheets: lay.sheets.length, reducedM2: red / 1e6, score, chosen: false });
+    if (!best[u.owner] || score < best[u.owner].score) best[u.owner] = { ci: u.cand, score };
+  });
+  run.win = groups.map((g, gi) => run.units.find(u => u.owner === gi && (best[gi] ? u.cand === best[gi].ci : u.cand === null)).best);
+  const fin = groups.map((g, gi) => {
+    if (!best[gi]) return g.ctx;
+    rows[gi][best[gi].ci].chosen = true;
+    return makeGroupCtx(S, E, g.insts, g.cands[best[gi].ci].map(i => g.sizes[i]), S.gl);
+  });
+  groups.forEach((g, gi) => {
+    if (!best[gi]) return;
+    g.sizes = g.cands[best[gi].ci].map(i => g.sizes[i]); g.multi = g.sizes.length > 1; g.cands = []; g.ctx = fin[gi];
+    run.choice.push({ mat: g.mat, rows: rows[gi] });
+  });
+  if (stopped) { groups.forEach((g, gi) => { g.best = run.win[gi]; }); return true; }
+  run.stage = 2; run.gi = 0;
+  run.units = groups.map((g, gi) => { const u = { owner: gi, cand: null, ctx: copyCtx(fin[gi]) }; return Object.assign(u, run.v2 ? initGroup2(u.ctx) : initGroup(u.ctx)); });
+  run.iter += run.units.reduce((s, u) => s + (u.v2 ? u.initCount : 6 * (u.ctx.sizes.length > 1 ? u.rules.length : 1)), 0);
+  return false;
+}
+// End of the run (after stage 0 / stage 2): the groups' best layouts.
+function runFinish(run) {
+  if (run.stage !== 2) return;
+  run.groups.forEach((g, gi) => {
+    const u = run.units[gi], l1 = run.win[gi], l2 = u.best;
+    g.best = layoutScore(g.ctx, l1.sheets) < layoutScore(g.ctx, l2.sheets) ? l1 : l2;
+  });
+}</script>
 
 <script id="docx">
 /* ---------- Word (.docx) writer: ZIP (stored) + WordprocessingML helpers. No DOM. ---------- */
@@ -1053,14 +1570,8 @@ function buildDocx({ body, images, title, footer, created }) {
 
 <script>
 /* ---------- Formatting (Slovenian: 1.234,56) ---------- */
-function fmt(n, d = 2) {
-  if (!isFinite(n)) return '–';
-  const neg = n < -1e-12;
-  let [i, f] = Math.abs(n).toFixed(d).split('.');
-  i = i.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  return (neg ? '−' : '') + i + (f ? ',' + f : '');
-}
-const dim = n => fmt(n, Math.abs(n - Math.round(n)) < 1e-6 ? 0 : 1);
+// fmt, dim, matLabel, sizeLabel: defined in the engine script (the size choice error texts use them)
+
 const m2 = mm2 => mm2 / 1e6;
 const tsv = (n, d) => isFinite(n) ? n.toFixed(d).replace('.', ',') : '';
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1236,9 +1747,12 @@ $('#loadSample').onclick = () => { parts = SAMPLE.map(p => ({ ...p })); isSample
 ['step', 'minOff', 'gap', 'gGap', 'margin'].forEach(id => $('#' + id).addEventListener('input', markStale));
 ['gH', 'gW'].forEach(id => $('#' + id).addEventListener('change', markStale));
 $('#rot').addEventListener('change', markStale);
+// cut stages and the non-guillotine penalty change the result; the engine and early stop do not (no markStale)
+['gS2', 'gS3', 'gS0'].forEach(id => $('#' + id).addEventListener('change', markStale));
+$('#ngW').addEventListener('input', markStale);
+$('#sizesMax').addEventListener('change', () => { sizesMax = clampSizesMax(+$('#sizesMax').value); saveSettings(); markStale(); });
 
 /* ---------- Sheet sizes ---------- */
-const matLabel = m => m || 'No material';
 const SIZE_KEY = 'sheet-nesting-sizes-v1';
 const DEF_SIZES = [{ id: 's1', W: 2500, H: 1250 }, { id: 's2', W: 3000, H: 1500 }];
 let sheetSizes = null;
@@ -1254,13 +1768,22 @@ if (!Array.isArray(sheetSizes) || !sheetSizes.length) {
 }
 let sizeSeq = sheetSizes.reduce((mx, x) => Math.max(mx, +String(x.id).slice(1) || 0), 0);
 function saveSizes() { try { localStorage.setItem(SIZE_KEY, JSON.stringify(sheetSizes)); } catch (e) {} }
-const sizeLabel = x => x.W > 0 && x.H > 0 ? `${dim(x.W)} × ${dim(x.H)}` : '–';
+// "Sheet sizes to use": 0 = all ticked sizes, k = the best k of them (size choice). k >= number of sizes means All.
+let sizesMax = 0;
+const clampSizesMax = k => k > 0 && k < sheetSizes.length ? k : 0;
+function renderSizeMax() {
+  const n = sheetSizes.length; sizesMax = clampSizesMax(sizesMax);
+  $('#sizesMaxRow').hidden = n < 2;
+  $('#sizesMax').innerHTML = '<option value="0">All</option>' + Array.from({ length: Math.max(0, n - 1) }, (_, i) => `<option value="${i + 1}">Best ${i + 1}</option>`).join('');
+  $('#sizesMax').value = String(sizesMax);
+}
 function renderSizes() {
   const one = sheetSizes.length < 2;
   $('#sizesBody').innerHTML = sheetSizes.map(x => `<tr data-id="${x.id}">
     <td><input id="szW_${x.id}" data-k="W" class="num${x.W > 0 ? '' : ' bad'}" inputmode="decimal" value="${x.W > 0 ? inVal(x.W) : ''}" aria-label="Sheet width in mm"></td>
     <td><input id="szH_${x.id}" data-k="H" class="num${x.H > 0 ? '' : ' bad'}" inputmode="decimal" value="${x.H > 0 ? inVal(x.H) : ''}" aria-label="Sheet height in mm"></td>
     <td><button class="x" type="button" data-del="${x.id}" aria-label="Remove sheet size ${sizeLabel(x)}"${one ? ' disabled' : ''}>×</button></td></tr>`).join('');
+  renderSizeMax();
 }
 $('#sizesBody').addEventListener('input', e => {
   const t = e.target, k = t.dataset.k; if (!k) return;
@@ -1274,11 +1797,11 @@ $('#sizesBody').addEventListener('click', e => {
   sheetSizes = sheetSizes.filter(z => z.id !== gone);
   Object.values(matSheets).forEach(a => { if (a && Array.isArray(a.off)) a.off = a.off.filter(id => id !== gone); });
   try { localStorage.setItem(MAT_KEY, JSON.stringify(matSheets)); } catch (err) {}
-  saveSizes(); renderSizes(); renderMats(); markStale();
+  saveSizes(); renderSizes(); saveSettings(); renderMats(); markStale();
 });
 $('#addSize').onclick = () => {
   sheetSizes.push({ id: 's' + (++sizeSeq), W: 0, H: 0 });
-  saveSizes(); renderSizes(); renderMats(); markStale();
+  saveSizes(); renderSizes(); saveSettings(); renderMats(); markStale();
   const el = document.getElementById('szW_s' + sizeSeq); el && el.focus();
 };
 /* ---------- Materials: each nested on its own sheets ---------- */
@@ -1390,12 +1913,14 @@ $('#typesBody').addEventListener('input', e => {
 });
 /* ---------- Remember settings in this browser ---------- */
 const SET_KEY = 'sheet-nesting-settings-v1';
-const SET_TEXT = ['step', 'minOff', 'gap', 'gGap', 'margin', 'limW', 'limH', 'limD', 'time'];
-const SET_CHECK = ['rot', 'mL', 'mR', 'mB', 'topm', 'gH', 'gW'];
+const SET_TEXT = ['step', 'minOff', 'gap', 'gGap', 'margin', 'limW', 'limH', 'limD', 'time', 'ngW'];
+// radios (cut stages, engine) are saved as one boolean each; old saved data without them keeps the defaults
+const SET_CHECK = ['rot', 'mL', 'mR', 'mB', 'topm', 'gH', 'gW', 'gS2', 'gS3', 'gS0', 'stopEarly', 'engNew', 'engClassic'];
 function saveSettings() {
   const o = {};
   SET_TEXT.forEach(id => o[id] = $('#' + id).value);
   SET_CHECK.forEach(id => o[id] = $('#' + id).checked);
+  o.sizesMax = sizesMax;
   try { localStorage.setItem(SET_KEY, JSON.stringify(o)); } catch (e) { $('#rememberTxt').textContent = 'Settings cannot be remembered in this browser'; }
 }
 function restoreSettings() {
@@ -1404,6 +1929,8 @@ function restoreSettings() {
   if (!o || typeof o !== 'object') return;
   SET_TEXT.forEach(id => { if (typeof o[id] === 'string') $('#' + id).value = o[id]; });
   SET_CHECK.forEach(id => { if (typeof o[id] === 'boolean') $('#' + id).checked = o[id]; });
+  if (typeof o.sizesMax === 'number') sizesMax = clampSizesMax(o.sizesMax);
+  renderSizeMax();
 }
 restoreSettings();
 SET_TEXT.forEach(id => $('#' + id).addEventListener('input', saveSettings));
@@ -1413,7 +1940,7 @@ $('#resetSet').onclick = () => {
   SET_TEXT.forEach(id => { const el = $('#' + id); el.value = el.defaultValue; });
   SET_CHECK.forEach(id => { const el = $('#' + id); el.checked = el.defaultChecked; });
   try { localStorage.removeItem(SET_KEY); } catch (e) {}
-  sheetSizes = DEF_SIZES.map(x => ({ ...x })); sizeSeq = 2; saveSizes();
+  sheetSizes = DEF_SIZES.map(x => ({ ...x })); sizeSeq = 2; saveSizes(); sizesMax = 0;
   Object.values(matSheets).forEach(a => { if (a) delete a.off; });
   try { localStorage.setItem(MAT_KEY, JSON.stringify(matSheets)); } catch (e) {}
   renderSizes(); renderMats(); markLimits();
@@ -1562,14 +2089,18 @@ drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) l
 /* ---------- Run ---------- */
 function readSettings() {
   const v = id => parseNum($('#' + id).value);
-  return { sizes: sheetSizes.map(x => ({ ...x })), gap: v('gap'), gGap: v('gGap'), gH: $('#gH').checked, gW: $('#gW').checked, margin: v('margin'), rot: $('#rot').checked, topM: $('#topm').checked, mL: $('#mL').checked, mR: $('#mR').checked, mB: $('#mB').checked, step: v('step'), minOff: v('minOff'), lim: readLim(), typeAdd: JSON.parse(JSON.stringify(typeAdd)), matSheets: JSON.parse(JSON.stringify(matSheets)), time: v('time') };
+  const stages = $('#gS2').checked ? 2 : $('#gS3').checked ? 3 : 0;
+  return { sizes: sheetSizes.map(x => ({ ...x })), gap: v('gap'), gGap: v('gGap'), gH: $('#gH').checked, gW: $('#gW').checked, stages, ngW: v('ngW'), margin: v('margin'), rot: $('#rot').checked, topM: $('#topm').checked, mL: $('#mL').checked, mR: $('#mR').checked, mB: $('#mB').checked, step: v('step'), minOff: v('minOff'), lim: readLim(), typeAdd: JSON.parse(JSON.stringify(typeAdd)), matSheets: JSON.parse(JSON.stringify(matSheets)), time: v('time'), stopEarly: $('#stopEarly').checked, engine: $('#engClassic').checked ? 'classic' : 'new', sizesMax: clampSizesMax(sizesMax) };
 }
 function startRun() {
   showErr('');
   const S = readSettings();
   if (!(S.gap >= 0) || !(S.margin >= 0)) return showErr('Gap between parts and edge margin must be 0 or more.');
   if ((S.gH || S.gW) && (!(S.gGap >= 0) || S.gGap > S.gap)) return showErr('Gap at guillotine cut must be 0 or more and not larger than the gap between parts.');
-  S.gl = (S.gH || S.gW) && S.gGap < S.gap ? { G: S.gap, g: S.gGap, H: S.gH, W: S.gW } : null;
+  if (![0, 2, 3].includes(S.stages)) return showErr('Cut stages must be 2, 3 or unlimited.');
+  if (!(S.ngW >= 0)) return showErr('Non-guillotine penalty must be 0 or more.');
+  // equal gaps also count as guillotine mode (the guillotine preference of search v2)
+  S.gl = (S.gH || S.gW) && S.gGap <= S.gap ? { G: S.gap, g: S.gGap, H: S.gH, W: S.gW, stages: S.stages, ngW: S.ngW * 1e6 } : null;
   const E = edgeM(S);
   if (S.sizes.some(x => !(x.W > 0 && x.H > 0))) return showErr('Enter a width and height for every sheet size, or remove the empty row.');
   if (!(S.time > 0)) S.time = 5;
@@ -1596,52 +2127,67 @@ function startRun() {
       const p = parts[pi], { w: bw, h: bh } = blankOf(p, S.typeAdd), ew = bw + S.gap, eh = bh + S.gap;
       const why = hasLim(S.lim) ? overLimit(bw, bh, S.lim) : '';
       if (why) { over.push({ ...p, w: bw, h: bh, why }); return; }
-      const fits = szs.some(z => (ew <= z.UW + EPS && eh <= z.UH + EPS) || (S.rot && eh <= z.UW + EPS && ew <= z.UH + EPS));
+      const fits = szs.some(z => partFits(S.rot, z, ew, eh));
       if (!fits) { unfit.push({ ...p, w: bw, h: bh, sheetTxt: szs.map(sizeLabel).join(' or ') }); return; }
       for (let q = 0; q < p.qty; q++) insts.push({ pi, w: bw, h: bh, ew, eh });
     });
     if (!insts.length) continue;
     const props = propsOf(mat, S.matSheets);
-    if (szs.length === 1) {
-      const ctx = { insts, UW: szs[0].UW, UH: szs[0].UH, rot: S.rot, sizes: szs, gl: S.gl };
-      groups.push({ mat, sizes: szs, multi: false, ...props, ctx, ...initGroup(ctx) });
-    } else {
-      const cost = (si, top) => szs[si].W * reducedH(szs[si].H, E.b + top - S.gap, S, E).hRed;
-      const ctx = { insts, UW: szs[0].UW, UH: szs[0].UH, rot: S.rot, sizes: szs, cost, gl: S.gl };
-      groups.push({ mat, sizes: szs, multi: true, ...props, ctx, ...initGroup(ctx) });
-    }
+    // Best k of the ticked sizes: the combinations to compare (error text when there are too many or none fits every part)
+    const cr = groupCands(S, insts, szs, S.sizesMax, mat);
+    if (cr.error) return showErr(cr.error);
+    groups.push({ mat, sizes: szs, multi: szs.length > 1, ...props, insts, cands: cr.cands });
   }
   if (!groups.length) return showErr(over.length && !unfit.length ? 'All parts are over the part size limits.' : 'None of the parts fit on their sheet with the current margin or within the part size limits.');
-  job = { S, groups, gi: 0, unfit, over, parts: parts.map(p => ({ ...p })), src: srcName, dirty: false, iter: groups.reduce((t, g) => t + 6 * (g.multi ? g.rules.length : 1), 0), t0: performance.now(), budget: S.time * 1000, stop: false };
+  const fc = finishChoice(S, E, groups);
+  if (fc.error) return showErr(fc.error);
+  const run = newRun(S, E, groups, fc.cap);
+  const budget = S.time * 1000, choosing = run.stage === 1;
+  job = { S, groups, run, gi: 0, unfit, over, parts: parts.map(p => ({ ...p })), src: srcName, dirty: false, t0: performance.now(), budget, stop: false,
+    stageT0: performance.now(), stageBudget: choosing ? budget * CHOICE_SCREEN : budget, stageBase: 0, halt: false, bestTot: null, lastImp: 0, nextCheck: 0 };
   $('#run').textContent = 'Stop'; $('#run').classList.add('stop');
   step();
 }
 function step() {
   const j = job; if (!j) return;
-  const end = performance.now() + 30;
+  const run = j.run, end = performance.now() + 30;
+  let over = false;
   while (performance.now() < end) {
-    const el = performance.now() - j.t0;
-    if (el >= j.budget || j.stop) break;
-    const g = j.groups[j.gi++ % j.groups.length];
-    searchStep(g, g.ctx, el / j.budget);
-    j.iter++;
+    const now = performance.now(), el = now - j.stageT0;
+    if (el >= j.stageBudget || j.stop || j.halt) {
+      if (run.stage === 1) { // screening done (or stopped): winners, then the rest of the time on them
+        if (runEndScreening(run, j.stop)) { over = true; break; }
+        const t = performance.now();
+        Object.assign(j, { stageT0: t, stageBudget: j.budget * (1 - CHOICE_SCREEN), stageBase: j.budget * CHOICE_SCREEN, halt: false, bestTot: null });
+        continue;
+      }
+      over = true; break;
+    }
+    runStep(run, el / j.stageBudget);
+    // "Stop early when no improvement": stop the stage when the summed best score has not improved for max(2, 0,25 x elapsed) s
+    if (j.S.stopEarly && now >= j.nextCheck) {
+      j.nextCheck = now + 100;
+      const tot = runScore(run);
+      if (j.bestTot === null || tot < j.bestTot - EPS) { j.bestTot = tot; j.lastImp = now; }
+      else if ((now - j.lastImp) / 1000 >= Math.max(2, 0.25 * el / 1000)) j.halt = true;
+    }
   }
-  const el = performance.now() - j.t0;
-  $('#barFill').style.width = Math.min(100, el / j.budget * 100) + '%';
-  const nS = j.groups.reduce((s, g) => s + g.best.sheets.length, 0);
-  $('#ptext').textContent = `${fmt(j.iter, 0)} layouts tried · best: ${nS} sheets` + (j.groups.length > 1 ? ` in ${j.groups.length} materials` : '') + (j.groups.some(g => g.multi) ? (el < j.budget * PH_ONE ? ' · trying each sheet size' : el < j.budget * PH_ORDER ? ' · choosing sheet sizes' : ' · merging and repacking sheets') : el >= j.budget * 0.75 ? ' · tightening heights' : el < j.budget * 0.5 ? ' · reducing sheet count' : ' · lowering heights');
-  if (el >= j.budget || j.stop) finish(); else setTimeout(step, 0);
+  const el = performance.now() - j.stageT0;
+  $('#barFill').style.width = (over ? 100 : Math.min(100, (j.stageBase + el) / j.budget * 100)) + '%';
+  const nS = runSheets(run), fr = el / j.stageBudget;
+  $('#ptext').textContent = `${fmt(run.iter, 0)} layouts tried · best: ${nS} sheets` + (j.groups.length > 1 ? ` in ${j.groups.length} materials` : '') + (run.stage === 1 ? ' · comparing sheet sizes' : j.groups.some(g => g.multi) ? (fr < PH_ONE ? ' · trying each sheet size' : fr < PH_ORDER ? ' · choosing sheet sizes' : ' · merging and repacking sheets') : fr >= 0.75 ? ' · tightening heights' : fr < 0.5 ? ' · reducing sheet count' : ' · lowering heights');
+  if (over) finish(); else setTimeout(step, 0);
 }
 function finish() {
   const j = job; job = null;
+  runFinish(j.run);
   $('#run').textContent = 'Run nesting'; $('#run').classList.remove('stop');
   $('#barFill').style.width = '100%';
-  $('#ptext').textContent = `Done · ${fmt(j.iter, 0)} layouts tried in ${fmt((performance.now() - j.t0) / 1000, 1)} s`;
+  $('#ptext').textContent = `Done · ${fmt(j.run.iter, 0)} layouts tried in ${fmt((performance.now() - j.t0) / 1000, 1)} s`;
   lastResult = buildResult(j);
   $('#stale').hidden = !j.dirty;
   renderResults(lastResult);
-}
-$('#run').onclick = () => { if (job) job.stop = true; else startRun(); };
+}$('#run').onclick = () => { if (job) job.stop = true; else startRun(); };
 
 /* ---------- Results ---------- */
 const SUMK = ['A', 'Smax', 'Sred', 'lossMax', 'lossRed', 'saved'];
@@ -1650,19 +2196,7 @@ function sumSheets(list) {
   const t = sum(x => x); t.kg = sum(x => x.kg); t.eur = sum(x => x.eur);
   t.n = list.reduce((s, x) => s + x.items.length, 0); t.count = list.length; return t;
 }
-// Segments of the guillotine cuts (sheet coordinates, y from the bottom): each cut runs across its region at the middle of its band.
-function glCutSegs(node, box, out) {
-  if (!node.kids) return;
-  const y = node.axis === 'y', n = node.kids.length;
-  let lo = y ? box.y1 : box.x1;
-  node.kids.forEach((kid, k) => {
-    const last = k === n - 1, hi = last ? (y ? box.y2 : box.x2) : (node.bands[k].lo + node.bands[k].hi) / 2;
-    if (!last) out.push(y ? { x1: box.x1, y1: hi, x2: box.x2, y2: hi } : { x1: hi, y1: box.y1, x2: hi, y2: box.y2 });
-    glCutSegs(kid, y ? { x1: box.x1, y1: lo, x2: box.x2, y2: hi } : { x1: lo, y1: box.y1, x2: hi, y2: box.y2 }, out);
-    lo = hi;
-  });
-}
-const glTxt = S => S.gl ? [S.gl.H ? 'height' : '', S.gl.W ? 'width' : ''].filter(Boolean).join(', ') : 'off';
+const glTxt = S => S.gl ? [S.gl.H ? 'height' : '', S.gl.W ? 'width' : ''].filter(Boolean).join(', ') + (S.gl.stages ? `, max ${S.gl.stages} cut stages` : '') : 'off';
 function buildResult(j) {
   const { S } = j, E = edgeM(S);
   const sheets = [], mats = [];
@@ -1693,7 +2227,7 @@ function buildResult(j) {
   const hasMat = sheets.some(s => s.mat);
   const mass = mats.some(m => m.t > 0 && m.rho > 0), cost = mats.some(m => m.t > 0 && m.rho > 0 && m.price > 0);
   const sizesUsed = sizeCounts(sheets);
-  return { S, sheets, tot, mats, hasMat, mass, cost, sizesUsed, multiSize: sizesUsed.length > 1, unfit: j.unfit, over: j.over, parts: j.parts.map(p => { const b = blankOf(p, S.typeAdd); return { ...p, bw: b.w, bh: b.h }; }), date: today(), src: j.src };
+  return { S, sheets, tot, mats, hasMat, mass, cost, sizesUsed, multiSize: sizesUsed.length > 1, unfit: j.unfit, over: j.over, choice: j.run.choice, choiceCap: j.run.choiceCap, parts: j.parts.map(p => { const b = blankOf(p, S.typeAdd); return { ...p, bw: b.w, bh: b.h }; }), date: today(), src: j.src };
 }
 function sizeCounts(list) {
   const by = new Map();
@@ -1702,6 +2236,8 @@ function sizeCounts(list) {
 }
 const sizeListTxt = arr => arr.length === 1 ? `${sizeLabel(arr[0])} mm` : arr.map(x => `${x.n}× ${sizeLabel(x)}`).join(' · ') + ' mm';
 const sizeTxt = R => sizeListTxt(R.sizesUsed);
+// "2.500 × 1.250 · 3.000 × 1.500" (mm) for a row of the size choice table
+const choiceSizesTxt = x => x.sizes.map(([W, H]) => sizeLabel({ W, H })).join(' · ');
 const massTxt = (x, k, R) => (R.mass ? ' · ' + fmt(x.kg[k], 1) + ' kg' : '') + (R.cost ? ' · ' + fmt(x.eur[k], 2) + ' €' : '');
 const pct = (a, b) => b > 0 ? a / b * 100 : 0;
 // portrait sheets get a side-by-side layout (drawing + stats) on screen and in the report
@@ -1721,6 +2257,10 @@ function renderResults(R) {
     <div class="stat good"><span class="k">Difference (saved)</span><span class="v">${fmt(m2(tot.saved), 3)} m²</span><span class="s">−${fmt(pMax - pRed, 1)} pp${massTxt(tot, 'saved', R)}</span></div>
   </div>`;
 
+  if (R.choice.length) h += `<section class="card"><h2>Size choice</h2>${R.choice.map(g => `${R.choice.length > 1 ? `<div class="lab2">${esc(matLabel(g.mat))}</div>` : ''}
+    <div class="tablewrap"><table class="rtable"><thead><tr><th style="text-align:left">Sheet sizes<br>mm</th><th>Sheets</th><th>Reduced<br>m²</th><th></th></tr></thead>
+    <tbody>${g.rows.map(x => `<tr${x.chosen ? ' class="chosen"' : ''}><td style="text-align:left">${x.chosen ? '<b>' : ''}${esc(choiceSizesTxt(x))}${x.chosen ? '</b>' : ''}</td><td>${x.chosen ? '<b>' : ''}${x.sheets}${x.chosen ? '</b>' : ''}</td><td>${x.chosen ? '<b>' : ''}${fmt(x.reducedM2, 3)}${x.chosen ? '</b>' : ''}</td><td class="good">${x.chosen ? 'chosen' : ''}</td></tr>`).join('')}</tbody></table></div>`).join('')}
+    <p class="hint">${esc(choiceNote(R.choiceCap))}</p></section>`;
   const massCols = (mass ? '<th>Saved<br>kg</th>' : '') + (R.cost ? '<th>Saved<br>€</th>' : '');
   const mc = R.hasMat, mth = mc ? '<th>Material</th>' : '';
   const ms = R.multiSize, msh = ms ? '<th>Sheet size<br>mm</th>' : '';
@@ -1833,6 +2373,11 @@ function resultRows(R, xl) {
   L.push([], ['Placements (X from left edge, Y from bottom edge)'], ['Sheet', 'Material', 'Part', 'Width (mm)', 'Height (mm)', 'Rotated', 'X (mm)', 'Y (mm)']);
   sheets.forEach((s, k) => s.items.slice().sort((a, b) => a.y - b.y || a.x - b.x).forEach(it =>
     L.push([k + 1, T(s.mat), T(R.parts[it.pi].id), N(it.w, 1), N(it.h, 1), it.r ? 'yes' : 'no', N(it.x, 1), N(it.y, 1)])));
+  if (R.choice.length) {
+    L.push([], ['Size choice'], ['Material', 'Sheet sizes', 'Sheets', 'Reduced area (m²)', 'Chosen']);
+    R.choice.forEach(g => g.rows.forEach(x => L.push([T(g.mat), choiceSizesTxt(x), x.sheets, N(x.reducedM2, 4), x.chosen ? 'yes' : ''])));
+    L.push([T(choiceNote(R.choiceCap))]);
+  }
   return L;
 }
 /* ---------- Report for Word ---------- */
@@ -1982,6 +2527,12 @@ function buildReportDocx(R) {
       if (mass) r.push(fmt(m.kg.saved, 1)); if (cost) r.push(fmt(m.eur.saved, 2)); return r; }));
   }
 
+  // Sheet size choice
+  if (R.choice.length) {
+    const rows = R.choice.flatMap(g => g.rows.map(x => [matLabel(g.mat), x.chosen ? [bold(choiceSizesTxt(x))] : choiceSizesTxt(x), String(x.sheets), fmt(x.reducedM2, 3), x.chosen ? [{ t: 'chosen', b: true, color: GOOD }] : '']));
+    o += h2('Sheet size choice') + dTable([{ h: 'Material' }, { h: 'Sheet sizes (mm)' }, { h: 'Sheets', al: R_ }, { h: 'Reduced area\nm²', al: R_ }, { h: '' }], rows);
+    o += wPara(wRun(choiceNote(R.choiceCap), { sz: 8.5, color: MUTED }), { before: 4 });
+  }
   // Settings
   const set = [
     ['Sheet sizes', S.sizes.map(sizeLabel).join(', ') + ' mm'], ['Gap between parts', `${dim(S.gap)} mm`], ['Guillotine cuts', glTxt(S) + (S.gl ? `, gap at cut ${dim(S.gl.g)} mm` : '')],
