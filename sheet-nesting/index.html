@@ -390,7 +390,7 @@ svg g.pg:hover .part{stroke:var(--accent);stroke-width:2px}
           <label><input type="radio" name="engine" id="engNew" checked> New (guillotine-aware)</label>
           <label><input type="radio" name="engine" id="engClassic"> Classic</label>
         </div>
-        <p class="hint" style="margin-top:6px">New uses the guillotine-aware search when guillotine cuts are on. Without guillotine cuts both settings use the classic search: the new one was not better there in the benchmark.</p>        <div id="err" class="msg" hidden></div>
+        <p class="hint" style="margin-top:6px">The search runs on several processor cores (search workers). New uses the guillotine-aware search when guillotine cuts are on; without guillotine cuts it mixes it with the classic search (only the classic one on a single core, or with several sheet sizes). Classic uses the classic search only.</p>        <div id="err" class="msg" hidden></div>
         <div id="stale" class="stale" hidden>Inputs changed since this result. Run nesting again to update it.</div>
       </section>
       <div id="results" class="col">
@@ -409,6 +409,11 @@ svg g.pg:hover .part{stroke:var(--accent);stroke-width:2px}
 </div>
 
 <script type="text/markdown" id="changelog">
+## 1.7.0 – 24.11.2026
+
+- The search runs on several processor cores at once (up to 8 search workers): the page stays responsive while it searches, and the same search time gives better layouts (about 0,4 % less material on a 4-core computer).
+- Engine "New" now also helps without guillotine cuts: on several cores it mixes the new and the classic search.
+
 ## 1.6.0 – 22.11.2026
 
 - New search engine for guillotine cuts: with Height / Width cuts on it plans sheets that can almost always be cut with straight cuts only, and uses about 5 % less material than before (the old search stays in the app as "Classic").
@@ -1366,23 +1371,40 @@ function prepareChoice(wh, k, parts) {
    stage 2: the winners (and the other groups again from scratch) get the rest; at the end the better of the screening layout and
             the final layout (layoutScore on the winner sizes) is the group's best. After stage 1, group.sizes / ctx / multi are the
             winner's (si of the layouts refers to them) and run.choice holds the combinations tried. Stop in stage 1 keeps the screening
-            layouts. The engine setting New = search v2 only with guillotine mode on (benchmark gate, tests/v2/v2-vs-classic.txt). */
+            layouts. On one thread the engine setting New = search v2 only with guillotine mode on (benchmark gate, tests/v2/v2-vs-classic.txt);
+            with search workers poolV2 picks the engine per worker (tests/v2/pool.txt). */
 const useV2Engine = S => S.engine !== 'classic' && !!S.gl;
+// Engine of worker k of n in a pooled run (port of pool.rs Any::new / hybrid_from): with several workers and engine New,
+// workers k % 4 < from run search v2, the others the classic search (a portfolio): from = 4 with guillotine mode (all v2),
+// 0 when a unit has several sizes (all classic: v2 trailed there), else 2 (half of them). One worker: as useV2Engine.
+const HYBRID_FROM = 2, HYBRID_FROM_GL = 4, HYBRID_FROM_MULTI = 0;
+function poolV2(S, ctxs, k, n) {
+  if (S.engine === 'classic') return false;
+  if (!(n > 1)) return useV2Engine(S);
+  const from = ctxs.some(c => c.gl) ? HYBRID_FROM_GL : ctxs.some(c => c.sizes.length > 1) ? HYBRID_FROM_MULTI : HYBRID_FROM;
+  return k % 4 < from;
+}
 const copyCtx = ctx => { const c = { insts: ctx.insts, UW: ctx.UW, UH: ctx.UH, rot: ctx.rot, sizes: ctx.sizes, cost: ctx.cost }; if (ctx.gl) c.gl = ctx.gl; return c; };
-function newRun(S, E, groups, cap) {
-  const v2 = useV2Engine(S), run = { S, E, groups, v2, stage: 0, gi: 0, iter: 0, choice: [], choiceCap: cap || null, win: null, units: null };
+function newRun(S, E, groups, cap, pool) {
+  const run = { S, E, groups, v2: false, stage: 0, gi: 0, iter: 0, choice: [], choiceCap: cap || null, win: null, units: null, pool: pool || null };
   groups.forEach(g => { g.ctx = makeGroupCtx(S, E, g.insts, g.sizes, S.gl); g.multi = g.sizes.length > 1; });
-  if (!groups.some(g => g.cands && g.cands.length)) { run.units = groups; groups.forEach(g => Object.assign(g, v2 ? initGroup2(g.ctx) : initGroup(g.ctx))); }
+  if (!groups.some(g => g.cands && g.cands.length)) run.units = groups;
   else {
     run.stage = 1; run.units = [];
     groups.forEach((g, owner) => {
       if (!g.cands.length) run.units.push({ owner, cand: null, ctx: copyCtx(g.ctx) });
       else g.cands.forEach((c, ci) => run.units.push({ owner, cand: ci, ctx: makeGroupCtx(S, E, g.insts, c.map(i => g.sizes[i]), S.gl) }));
     });
-    run.units.forEach(u => Object.assign(u, v2 ? initGroup2(u.ctx) : initGroup(u.ctx)));
   }
-  run.iter = run.units.reduce((s, u) => s + (u.v2 ? u.initCount : 6 * (u.ctx.sizes.length > 1 ? u.rules.length : 1)), 0);
+  run.v2 = pool ? poolV2(S, run.units.map(u => u.ctx), pool.k, pool.n) : useV2Engine(S);
+  initUnits(run);
   return run;
+}
+// Start layouts of the run's units (not on the main thread of a pooled run: the workers search, run.pool.noInit).
+function initUnits(run) {
+  if (run.pool && run.pool.noInit) return;
+  run.units.forEach(u => Object.assign(u, run.v2 ? initGroup2(u.ctx) : initGroup(u.ctx)));
+  run.iter += run.units.reduce((s, u) => s + (u.v2 ? u.initCount : 6 * (u.ctx.sizes.length > 1 ? u.rules.length : 1)), 0);
 }
 // One search step on the next unit; frac = elapsed / budget of the current stage.
 function runStep(run, frac) {
@@ -1392,7 +1414,7 @@ function runStep(run, frac) {
 }
 // Layouts, sheets and the total of the units' best layouts, for the progress text (screening scales the sum to the groups).
 function runSheets(run) {
-  const sum = run.units.reduce((s, u) => s + u.best.sheets.length, 0);
+  const sum = run.units.reduce((s, u) => s + (u.best ? u.best.sheets.length : 0), 0);
   if (run.stage !== 1) return sum;
   const ng = run.groups.length;
   return Math.max(Math.ceil(sum * ng / run.units.length), sum > 0 ? ng : 0);
@@ -1422,8 +1444,9 @@ function runEndScreening(run, stopped) {
   });
   if (stopped) { groups.forEach((g, gi) => { g.best = run.win[gi]; }); return true; }
   run.stage = 2; run.gi = 0;
-  run.units = groups.map((g, gi) => { const u = { owner: gi, cand: null, ctx: copyCtx(fin[gi]) }; return Object.assign(u, run.v2 ? initGroup2(u.ctx) : initGroup(u.ctx)); });
-  run.iter += run.units.reduce((s, u) => s + (u.v2 ? u.initCount : 6 * (u.ctx.sizes.length > 1 ? u.rules.length : 1)), 0);
+  run.units = groups.map((g, gi) => ({ owner: gi, cand: null, ctx: copyCtx(fin[gi]) }));
+  if (run.pool) run.v2 = poolV2(S, run.units.map(u => u.ctx), run.pool.k, run.pool.n);
+  initUnits(run);
   return false;
 }
 // End of the run (after stage 0 / stage 2): the groups' best layouts.
@@ -1433,7 +1456,99 @@ function runFinish(run) {
     const u = run.units[gi], l1 = run.win[gi], l2 = u.best;
     g.best = layoutScore(g.ctx, l1.sheets) < layoutScore(g.ctx, l2.sheets) ? l1 : l2;
   });
-}</script>
+}
+/* ---------- Parallel search (port of nest-core/src/pool.rs): one Web Worker (or node worker thread) = one copy of the run ----------
+   The main thread sends each worker { type: 'start', id, k, n, S, E, groups: [{ mat, sizes, insts, cands, t, rho, price }], cap, budget }
+   (one stage of the run; budget in ms). The worker builds its own run (newRun with its engine, poolV2), searches in 25 ms chunks and
+   reports { type: 'best', id, k, iter, units: [{ ui, score, sheets, order, rule }] } for units whose best beats the board it knows (at
+   most every POOL_REPORT ms). The main thread keeps the best per unit over all workers (poolTake) and sends the improved ones to all
+   workers ({ type: 'board', id, units }); every POOL_SYNC ms a worker adopts each board layout better than its own (pool.rs adopt).
+   { type: 'end', id } -> { type: 'final', ... } with every unit. Scores on the board: the classic score when the engine is Classic
+   (every worker classic), else the v2 score (a classic worker of a hybrid run scores its best with layoutScore). */
+const POOL_SYNC = 500, POOL_REPORT = 100, POOL_CHUNK = 25;
+// Score of a layout in the classic search's units (port of search2.rs classic_score).
+function classicScore(ctx, sheets) {
+  let placed = 0; for (const s of sheets) placed += s.items.length;
+  const lost = (ctx.insts.length - placed) * 1e15;
+  if (ctx.sizes.length === 1) { let top = 0; for (const s of sheets) top += s.top; return sheets.length * 1e12 + top + lost; }
+  let c = 0; for (const s of sheets) c += ctx.cost(s.si || 0, s.top);
+  return c + lost + sheets.length * (ctx.sheetPen || 1);
+}
+// Board score of unit ui's best layout (pool.rs Any::board; a hybrid classic worker caches it by its own score).
+function poolBoard(W, ui) {
+  const u = W.run.units[ui];
+  if (W.run.v2 || W.native) return u.best.score;
+  const c = W.cache[ui];
+  if (c && c[0] === u.best.score) return c[1];
+  const b = layoutScore(u.ctx, u.best.sheets);
+  W.cache[ui] = [u.best.score, b];
+  return b;
+}
+// Takes a board layout b = { score, sheets, order, rule } as unit ui's best (pool.rs Any::adopt, search2.rs adopt).
+function poolAdopt(W, ui, b) {
+  const u = W.run.units[ui];
+  if (W.run.v2) {
+    u.cur = v2Lay(u, u.ctx, b.sheets, false); u.curOrder = b.order.slice(); u.curRule = b.rule;
+    u.best = { sheets: b.sheets, score: u.cur.total }; u.bestOrder = b.order; u.rule = b.rule; u.hist.fill(u.cur.total);
+  } else if (W.native) { u.best = { sheets: b.sheets, score: b.score }; u.bestOrder = b.order; u.rule = b.rule; }
+  else { const cs = classicScore(u.ctx, b.sheets); u.best = { sheets: b.sheets, score: cs }; u.bestOrder = b.order; u.rule = b.rule; W.cache[ui] = [cs, b.score]; }
+}
+function poolWorkerNew(m) {
+  const run = newRun(m.S, m.E, m.groups, m.cap, { k: m.k, n: m.n });
+  const t = performance.now();
+  return { id: m.id, k: m.k, run, native: m.S.engine === 'classic', budget: m.budget, t0: t, known: run.units.map(() => Infinity), cache: [], board: [], lastSync: t, lastReport: -Infinity };
+}
+// The units whose best beats the board this worker knows (all = every unit, for the start and the end).
+function poolWorkerReport(W, all, type) {
+  const units = [];
+  W.run.units.forEach((u, ui) => {
+    const sc = poolBoard(W, ui);
+    if (all || sc < W.known[ui]) { if (sc < W.known[ui]) W.known[ui] = sc; units.push({ ui, score: sc, sheets: u.best.sheets, order: u.bestOrder, rule: u.rule }); }
+  });
+  return { type: type || 'best', id: W.id, k: W.k, iter: W.run.iter, units };
+}
+// Board layouts from the main thread: kept until the next sync.
+function poolWorkerBoard(W, units) {
+  for (const e of units) { if (!W.board[e.ui] || e.score < W.board[e.ui].score) W.board[e.ui] = e; if (e.score < W.known[e.ui]) W.known[e.ui] = e.score; }
+}
+// One chunk of search (ms); returns a report to post, or null.
+function poolWorkerChunk(W, ms) {
+  const t = performance.now(), end = t + ms;
+  if (t - W.lastSync >= POOL_SYNC) {
+    W.lastSync = t;
+    W.board.forEach((b, ui) => { if (b && b.score < poolBoard(W, ui) - EPS) poolAdopt(W, ui, b); });
+    W.board = [];
+  }
+  let now;
+  do { runStep(W.run, Math.min(1, (performance.now() - W.t0) / W.budget)); } while ((now = performance.now()) < end);
+  if (now - W.lastReport < POOL_REPORT) return null;
+  const r = poolWorkerReport(W, false);
+  if (!r.units.length && now - W.lastReport < 2 * POOL_REPORT) return null;
+  W.lastReport = now;
+  return r;
+}
+// Worker side: scope = self of a Web Worker (or an adapter with onmessage / postMessage). Yields between chunks, so 'board' and
+// 'end' messages get through: with a MessageChannel in a browser (setTimeout(0) would wait >= 4 ms), with later = setImmediate
+// in node (a self-posting MessagePort starves the parent port there).
+function poolWorkerMain(scope, later) {
+  let W = null, kick = later ? () => later(chunk) : null;
+  function chunk() { if (!W) return; const r = poolWorkerChunk(W, POOL_CHUNK); if (r) scope.postMessage(r); kick(); }
+  if (!kick) { const ch = new MessageChannel(); ch.port1.onmessage = chunk; kick = () => ch.port2.postMessage(0); }
+  scope.onmessage = e => {
+    const m = e.data;
+    if (m.type === 'start') { W = poolWorkerNew(m); scope.postMessage(poolWorkerReport(W, true)); W.lastReport = performance.now(); kick(); }
+    else if (m.type === 'board') { if (W && m.id === W.id) poolWorkerBoard(W, m.units); }
+    else if (m.type === 'end') { if (W && m.id === W.id) { const f = poolWorkerReport(W, true, 'final'); W = null; scope.postMessage(f); } }
+  };
+}
+// Main side: takes a worker's report into slots (best per unit over all workers); returns the improved entries.
+function poolTake(slots, m) {
+  const ch = [];
+  for (const e of m.units) if (!slots[e.ui] || e.score < slots[e.ui].score) { slots[e.ui] = e; ch.push(e); }
+  return ch;
+}
+// The data of a run's groups for 'start' (no functions or search state).
+const poolGroups = groups => groups.map(g => ({ mat: g.mat, sizes: g.sizes, insts: g.insts, cands: g.cands || [], t: g.t, rho: g.rho, price: g.price }));</script>
 
 <script id="docx">
 /* ---------- Word (.docx) writer: ZIP (stored) + WordprocessingML helpers. No DOM. ---------- */
@@ -1568,14 +1683,282 @@ function buildDocx({ body, images, title, footer, created }) {
 }
 </script>
 
-<script>
-/* ---------- Formatting (Slovenian: 1.234,56) ---------- */
-// fmt, dim, matLabel, sizeLabel: defined in the engine script (the size choice error texts use them)
-
+<script id="model">
+/* ---------- Model: DOM-free settings, import, result and export functions (port of RustySheets nest-model / nest-io).
+   No DOM and no top-level state, so tests can load this script whole (with the engine script); the main script below
+   holds the UI. Globals used only as call-time defaults: typeAdd, matSheets, sheetSizes, APP_VERSION. ---------- */
+/* ---------- Formatting (Slovenian: 1.234,56; fmt, dim, matLabel, sizeLabel are in the engine script) and dates ---------- */
 const m2 = mm2 => mm2 / 1e6;
 const tsv = (n, d) => isFinite(n) ? n.toFixed(d).replace('.', ',') : '';
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const inVal = n => isFinite(n) ? String(+n.toFixed(3)).replace('.', ',') : '';
+function today() { const d = new Date(); return String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + d.getFullYear(); }
+/* ---------- Numbers in text cells (port: nest-io num.rs parse_num) ---------- */
+function parseNum(v, mode) {
+  if (typeof v === 'number') return v;
+  if (v == null) return NaN;
+  let s = String(v).trim().replace(/[\s ]/g, '').replace(/mm$/i, '');
+  if (!s) return NaN;
+  if (mode === 'xml') { if (!s.includes('.')) s = s.replace(',', '.'); return Number(s); }
+  if (s.includes(',') && s.includes('.')) {
+    s = s.lastIndexOf(',') > s.lastIndexOf('.') ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+  } else if (s.includes(',')) s = s.replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  return Number(s);
+}
+/* ---------- Example parts and example files ---------- */
+const SAMPLE = [
+  { id: 'Side panel', w: 1180, h: 640, qty: 4 },
+  { id: 'Top cover', w: 1420, h: 520, qty: 2 },
+  { id: 'Door', w: 760, h: 590, qty: 3 },
+  { id: 'Base plate', w: 980, h: 450, qty: 2 },
+  { id: 'Bracket', w: 260, h: 140, qty: 12 },
+  { id: 'Rail', w: 1900, h: 90, qty: 6 },
+  { id: 'Filter frame', w: 540, h: 330, qty: 6 },
+  { id: 'Drip tray', w: 820, h: 310, qty: 2 },
+  { id: 'Mounting plate', w: 380, h: 280, qty: 5 }
+];
+const EXAMPLES = {
+  ahu: { file: 'nesting-example-ahu-en.csv', head: ['Part', 'Width (mm)', 'Height (mm)', 'Qty'], rows: () => SAMPLE.map(p => [p.id, p.w, p.h, p.qty]) },
+  slo: { file: 'nesting-primer-ahu-sl.csv', head: ['Naziv', 'Širina (mm)', 'Višina (mm)', 'Količina'], rows: () => [
+    ['Stranica', 1180, 640, 4], ['Pokrov', 1420, 520, 2], ['Vrata', 760, 590, 3], ['Dno', 980, 450, 2],
+    ['Nosilec', 260, 140, 12], ['Letev', 1900, 90, 6], ['Okvir filtra', 540, 330, 6], ['Kadica', 820, 310, 2], ['Montažna plošča', 380, 280, 5]] },
+  bare: { file: 'nesting-example-no-header.csv', head: null, rows: () => [
+    ['P-101', 1200, 600, 3], ['P-102', 900, 450, 4], ['P-103', 640, 320, 8], ['P-104', 2100, 150, 4], ['P-105', 300, 200, 10]] },
+  large: { file: 'nesting-example-large.csv', head: ['ID', 'Width', 'Height', 'Quantity'], rows: () => {
+    let s = 20261024; const r = () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const out = [];
+    for (let i = 1; i <= 30; i++) {
+      const big = r() < 0.3, w = Math.round((big ? 700 + r() * 1500 : 120 + r() * 600) / 5) * 5;
+      const h = Math.round((big ? 300 + r() * 600 : 80 + r() * 400) / 5) * 5;
+      out.push(['L-' + String(i).padStart(3, '0'), w, h, big ? 1 + Math.floor(r() * 3) : 2 + Math.floor(r() * 10)]);
+    }
+    return out;
+  } }
+};
+function exAoa(key) {
+  const ex = EXAMPLES[key], rows = ex.rows();
+  if (!rows.length) throw new Error('The parts list is empty. Add at least one valid part first.');
+  return ex.head ? [ex.head, ...rows] : rows;
+}
+function exTSV(key) {
+  return exAoa(key).map(r => r.map(c => typeof c === 'number' ? String(c).replace('.', ',') : String(c).replace(/[\t\n]/g, ' ')).join('\t')).join('\n');
+}
+/* ---------- Settings helpers: part size limits, materials, panel types, edge margins (port: nest-model settings.rs) ---------- */
+const hasLim = L => L.W > 0 || L.H > 0 || L.D > 0;
+const limTxt = L => hasLim(L) ? [L.W || L.H ? `${L.W ? dim(L.W) : 'any'} × ${L.H ? dim(L.H) : 'any'} mm` : '', L.D ? `diagonal ${dim(L.D)} mm` : ''].filter(Boolean).join(', ') : 'None';
+function overLimit(w, h, L) {
+  const MW = L.W || Infinity, MH = L.H || Infinity, why = [];
+  if (!((w <= MW + EPS && h <= MH + EPS) || (h <= MW + EPS && w <= MH + EPS))) why.push(`${dim(w)} × ${dim(h)} mm is over ${L.W ? dim(L.W) : 'any'} × ${L.H ? dim(L.H) : 'any'} mm`);
+  const d = Math.hypot(w, h);
+  if (L.D && d > L.D + EPS) why.push(`diagonal ${fmt(d, 1)} mm is over ${dim(L.D)} mm`);
+  return why.join('; ');
+}
+function sizesFor(m, S) { const off = ((S ? S.matSheets : matSheets)[m] || {}).off || []; return (S ? S.sizes : sheetSizes).filter(x => !off.includes(x.id)); }
+const DEF_PROPS = { t: 1, rho: 7850, price: 0 };
+const isNum = x => typeof x === 'number' && isFinite(x);
+function propsOf(m, map) {
+  map = map || matSheets; const a = map[m] || {}, d = map[''] || {};
+  const pick = k => isNum(a[k]) ? a[k] : isNum(d[k]) ? d[k] : DEF_PROPS[k];
+  return { t: pick('t'), rho: pick('rho'), price: pick('price') };
+}
+function addOf(t, map) { const a = (map || typeAdd)[t] || {}; return { w: a.w > 0 ? a.w : 0, h: a.h > 0 ? a.h : 0 }; }
+function blankOf(p, map) { if (!p.type) return { w: p.w, h: p.h }; const a = addOf(p.type, map); return { w: p.w + a.w, h: p.h + a.h }; }
+function usedTypes(R) { return [...new Set(R.parts.map(p => p.type).filter(Boolean))].sort(); }
+function edgeList(S) { const a = []; if (S.mL) a.push('left'); if (S.mR) a.push('right'); if (S.mB) a.push('bottom'); if (S.topM) a.push('top'); return a.length ? a.join(', ') : 'none'; }
+function edgeM(S) { const m = S.margin; return { l: S.mL ? m : 0, r: S.mR ? m : 0, b: S.mB ? m : 0, t: S.topM ? m : 0 }; }
+/* ---------- Import: header detection and rows to parts (port: nest-io import.rs) ---------- */
+function norm(s) { return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+function classify(name) {
+  const n = norm(name); if (!n) return null;
+  if (/^(qty|quantity|qnt|count|pcs|pieces|kos|kosov|kolicina|stevilo|amount|menge|stk|anzahl)$/.test(n) || /^(qty|quant|kolicin|kosov|pcs|count|anzahl)/.test(n)) return 'qty';
+  if (/^(w|width|sirina|breite|b|x|dimx|sizex)$/.test(n) || /^(width|sirin|breite)/.test(n)) return 'w';
+  if (/^(h|height|visina|hohe|hoehe|y|l|length|len|dolzina|lange|laenge|dimy|sizey)$/.test(n) || /^(height|visin|length|dolzin)/.test(n)) return 'h';
+  if (/^(material|mat|materijal|rawmaterial|werkstoff)/.test(n)) return 'mat';
+  if (/^(id|name|part|naziv|oznaka|pozicija|poz|ime|del|code|sifra|article|artikel|item|description|opis|label|ref)/.test(n)) return 'id';
+  return null;
+}
+// Single letters are ambiguous (x / y can be a position, b / l a width / length): full names win
+const WEAK = new Set(['x', 'y', 'b', 'l']);
+const isWeak = name => WEAK.has(norm(name));
+function partsFromRows(rows) {
+  let map = null, start = 0;
+  for (let r = 0; r < Math.min(rows.length, 15); r++) {
+    const m = {};
+    for (const weak of [false, true]) (rows[r] || []).forEach((c, ci) => { if (typeof c !== 'string' || isWeak(c) !== weak) return; const k = classify(c); if (k && m[k] === undefined) m[k] = ci; });
+    if (m.w !== undefined && m.h !== undefined) { map = m; start = r + 1; break; }
+  }
+  let note = 'Columns detected from the header row.';
+  if (!map) {
+    const first = rows.find(r => r && r.some(c => c !== null && c !== ''));
+    if (!first) return { list: [], note: '' };
+    map = isNaN(parseNum(first[0])) ? { id: 0, w: 1, h: 2, qty: 3 } : { w: 0, h: 1, qty: 2 };
+    note = 'No header found, so columns were read as ' + (map.id === 0 ? 'name, width, height, qty.' : 'width, height, qty.');
+  }
+  const list = [];
+  for (let r = start; r < rows.length; r++) {
+    const row = rows[r]; if (!row) continue;
+    const w = parseNum(row[map.w]), h = parseNum(row[map.h]);
+    if (!(w > 0 && h > 0)) continue;
+    let q = map.qty !== undefined ? Math.round(parseNum(row[map.qty])) : 1; if (!(q > 0)) q = 1;
+    const raw = map.id !== undefined ? row[map.id] : null;
+    const mv = map.mat !== undefined && row[map.mat] != null ? String(row[map.mat]).trim() : '';
+    list.push({ id: raw != null && String(raw).trim() !== '' ? String(raw).trim() : 'P' + (list.length + 1), w, h, qty: q, mat: mv });
+  }
+  return { list, note };
+}
+// Checks the settings and parts and builds the run setup (port of nest-model run.rs prepare): { error } or
+// { S, E, groups, unfit, over, cap }. S = readSettings() (gets gl and the clamped time); parts = [{ id, w, h, qty, mat, type }].
+function prepareRun(S, parts) {
+  const fail = error => ({ error });
+  if (!(S.gap >= 0) || !(S.margin >= 0)) return fail('Gap between parts and edge margin must be 0 or more.');
+  if ((S.gH || S.gW) && (!(S.gGap >= 0) || S.gGap > S.gap)) return fail('Gap at guillotine cut must be 0 or more and not larger than the gap between parts.');
+  if (![0, 2, 3].includes(S.stages)) return fail('Cut stages must be 2, 3 or unlimited.');
+  if (!(S.ngW >= 0)) return fail('Non-guillotine penalty must be 0 or more.');
+  // equal gaps also count as guillotine mode (the guillotine preference of search v2)
+  S.gl = (S.gH || S.gW) && S.gGap <= S.gap ? { G: S.gap, g: S.gGap, H: S.gH, W: S.gW, stages: S.stages, ngW: S.ngW * 1e6 } : null;
+  const E = edgeM(S);
+  if (S.sizes.some(x => !(x.W > 0 && x.H > 0))) return fail('Enter a width and height for every sheet size, or remove the empty row.');
+  if (!(S.time > 0)) S.time = 5;
+  if (!(S.step >= 0)) S.step = 0;
+  if (!(S.minOff >= 0)) S.minOff = 0;
+  S.time = Math.min(Math.max(S.time, 0.5), 120);
+  const bad = parts.filter(p => !(p.w > 0 && p.h > 0 && p.qty > 0));
+  if (bad.length) return fail(`Fix the highlighted values first: ${bad.map(p => p.id || 'unnamed').join(', ')}.`);
+  if (!parts.length) return fail('Add at least one part.');
+
+  const byMat = new Map();
+  parts.forEach((p, pi) => { const m = p.mat || ''; if (!byMat.has(m)) byMat.set(m, []); byMat.get(m).push(pi); });
+  const groups = [], unfit = [], over = [];
+  for (const mat of [...byMat.keys()].sort()) {
+    const allowed = sizesFor(mat, S);
+    if (!allowed.length) return fail(`Tick at least one sheet size for ${matLabel(mat)} under Materials.`);
+    const szs = [];
+    for (const x of allowed) {
+      if (E.l + E.r >= x.W || E.b + E.t >= x.H) return fail(`The edge margin is too large for the ${sizeLabel(x)} mm sheet.`);
+      szs.push({ id: x.id, W: x.W, H: x.H, UW: x.W - E.l - E.r + S.gap, UH: x.H - E.b - E.t + S.gap });
+    }
+    const insts = [];
+    byMat.get(mat).forEach(pi => {
+      const p = parts[pi], { w: bw, h: bh } = blankOf(p, S.typeAdd), ew = bw + S.gap, eh = bh + S.gap;
+      const why = hasLim(S.lim) ? overLimit(bw, bh, S.lim) : '';
+      if (why) { over.push({ ...p, w: bw, h: bh, why }); return; }
+      const fits = szs.some(z => partFits(S.rot, z, ew, eh));
+      if (!fits) { unfit.push({ ...p, w: bw, h: bh, sheetTxt: szs.map(sizeLabel).join(' or ') }); return; }
+      for (let q = 0; q < p.qty; q++) insts.push({ pi, w: bw, h: bh, ew, eh });
+    });
+    if (!insts.length) continue;
+    const props = propsOf(mat, S.matSheets);
+    // Best k of the ticked sizes: the combinations to compare (error text when there are too many or none fits every part)
+    const cr = groupCands(S, insts, szs, S.sizesMax, mat);
+    if (cr.error) return fail(cr.error);
+    groups.push({ mat, sizes: szs, multi: szs.length > 1, ...props, insts, cands: cr.cands });
+  }
+  if (!groups.length) return fail(over.length && !unfit.length ? 'All parts are over the part size limits.' : 'None of the parts fit on their sheet with the current margin or within the part size limits.');
+  const fc = finishChoice(S, E, groups);
+  if (fc.error) return fail(fc.error);
+  return { S, E, groups, unfit, over, cap: fc.cap };
+}
+/* ---------- Result of a run (port: nest-model result.rs build_result) ---------- */
+const SUMK = ['A', 'Smax', 'Sred', 'lossMax', 'lossRed', 'saved'];
+function sumSheets(list) {
+  const sum = f => SUMK.reduce((o, k) => (o[k] = list.reduce((s, x) => s + f(x)[k], 0), o), {});
+  const t = sum(x => x); t.kg = sum(x => x.kg); t.eur = sum(x => x.eur);
+  t.n = list.reduce((s, x) => s + x.items.length, 0); t.count = list.length; return t;
+}
+const glTxt = S => S.gl ? [S.gl.H ? 'height' : '', S.gl.W ? 'width' : ''].filter(Boolean).join(', ') + (S.gl.stages ? `, max ${S.gl.stages} cut stages` : '') : 'off';
+function buildResult(j) {
+  const { S } = j, E = edgeM(S);
+  const sheets = [], mats = [];
+  for (const g of j.groups) {
+    const { mat } = g, hasM = g.t > 0 && g.rho > 0;
+    const kgOf = a => hasM ? m2(a) * (g.t / 1000) * g.rho : 0;
+    const list = g.best.sheets.map(sh => {
+      const sz = g.sizes[sh.si || 0], W = sz.W, H = sz.H;
+      const items = sh.items.map(it => {
+        const p = g.insts[it.i];
+        const w = it.r ? p.h : p.w, h = it.r ? p.w : p.h;
+        return { pi: p.pi, x: E.l + it.x, y: E.b + it.y, w, h, r: it.r };
+      });
+      const realTop = Math.max(...items.map(i => i.y + i.h));
+      const { hRed, full } = reducedH(H, realTop, S, E);
+      const A = items.reduce((s, i) => s + i.w * i.h, 0);
+      const Smax = W * H, Sred = W * hRed;
+      const out = { mat, W, H, items, hRed, full, A, Smax, Sred, lossMax: Smax - A, lossRed: Sred - A, saved: Smax - Sred };
+      if (S.gl) { out.cuts = []; glCutSegs(glTree(items.map(i => ({ x: i.x, y: i.y, w: i.w, h: i.h })), S.gl), { x1: 0, y1: 0, x2: W, y2: hRed }, out.cuts); }
+      out.kg = SUMK.reduce((o, k) => (o[k] = kgOf(out[k]), o), {});
+      out.eur = SUMK.reduce((o, k) => (o[k] = out.kg[k] * (g.price || 0), o), {});
+      return out;
+    }).sort((a, b) => b.W * b.H - a.W * a.H || b.hRed - a.hRed || b.A - a.A);
+    sheets.push(...list);
+    mats.push({ mat, sizes: sizeCounts(list), allowed: g.sizes, t: g.t, rho: g.rho, price: g.price, ...sumSheets(list) });
+  }
+  const tot = sumSheets(sheets);
+  const hasMat = sheets.some(s => s.mat);
+  const mass = mats.some(m => m.t > 0 && m.rho > 0), cost = mats.some(m => m.t > 0 && m.rho > 0 && m.price > 0);
+  const sizesUsed = sizeCounts(sheets);
+  return { S, sheets, tot, mats, hasMat, mass, cost, sizesUsed, multiSize: sizesUsed.length > 1, unfit: j.unfit, over: j.over, choice: j.run.choice, choiceCap: j.run.choiceCap, parts: j.parts.map(p => { const b = blankOf(p, S.typeAdd); return { ...p, bw: b.w, bh: b.h }; }), date: today(), src: j.src };
+}
+function sizeCounts(list) {
+  const by = new Map();
+  list.forEach(x => { const k = x.W + 'x' + x.H, c = by.get(k) || { W: x.W, H: x.H, n: 0 }; c.n++; by.set(k, c); });
+  return [...by.values()].sort((a, b) => a.W * a.H - b.W * b.H);
+}
+const sizeListTxt = arr => arr.length === 1 ? `${sizeLabel(arr[0])} mm` : arr.map(x => `${x.n}× ${sizeLabel(x)}`).join(' · ') + ' mm';
+const sizeTxt = R => sizeListTxt(R.sizesUsed);
+// "2.500 × 1.250 · 3.000 × 1.500" (mm) for a row of the size choice table
+const choiceSizesTxt = x => x.sizes.map(([W, H]) => sizeLabel({ W, H })).join(' · ');
+const massTxt = (x, k, R) => (R.mass ? ' · ' + fmt(x.kg[k], 1) + ' kg' : '') + (R.cost ? ' · ' + fmt(x.eur[k], 2) + ' €' : '');
+const pct = (a, b) => b > 0 ? a / b * 100 : 0;
+// portrait sheets get a side-by-side layout (drawing + stats) on screen and in the report
+const isTall = s => s.H > s.W;
+const sheetCounts = s => { const c = {}; s.items.forEach(i => c[i.pi] = (c[i.pi] || 0) + 1); return Object.keys(c).map(Number).sort((a, b) => a - b).map(pi => [pi, c[pi]]); };
+/* ---------- Export rows: clipboard text, CSV, Excel (port: nest-io export.rs) ---------- */
+const xlText = s => /^[=+\-@]/.test(String(s)) ? "'" + s : s;
+const toTSV = L => L.map(a => a.map(c => String(c).replace(/[\t\r\n]+/g, ' ')).join('\t')).join('\n');
+const buildTSV = R => toTSV(resultRows(R));
+// CSV for Slovene Excel: semicolon separator, decimal comma, UTF-8 BOM so Š/Č/Ž and m² show correctly
+const csvCell = c => { c = typeof c === 'number' ? String(c).replace('.', ',') : String(c ?? ''); return /[;"\r\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; };
+const toCSV = L => '﻿' + L.map(a => a.map(csvCell).join(';')).join('\r\n') + '\r\n';
+function resultRows(R, xl) {
+  const N = xl ? (n, d) => isFinite(n) ? +n.toFixed(d) : '' : tsv, T = xl ? (s => s) : xlText;
+  const { S, sheets, tot } = R, mass = R.mass;
+  const L = [];
+  L.push([T('Sheet nesting result'), R.date, APP_VERSION ? 'v' + APP_VERSION : '']);
+  S.sizes.forEach(x => L.push(['Sheet size (width; height mm)', N(x.W, 1), N(x.H, 1)]));
+  R.mats.forEach(m => { if (m.allowed.length < S.sizes.length) L.push([`Sheet sizes allowed${m.mat ? ' ' + m.mat : ''}`, m.allowed.map(sizeLabel).join(' · ')]); });
+  L.push(['Gap between parts (mm)', N(S.gap, 1)], ['Guillotine cuts', glTxt(S)], ...(S.gl ? [['Gap at guillotine cut (mm)', N(S.gl.g, 1)]] : []), ['Edge margin (mm)', N(S.margin, 1)], ['Rotation', S.rot ? 'yes' : 'no'], ['Edge margin on', edgeList(S)], ['Round reduced height up to (mm)', N(S.step, 1)], ['Keep full size if offcut under (mm)', N(S.minOff, 1)], ['Part size limits (max width; max height; max diagonal mm)', S.lim.W ? N(S.lim.W, 1) : '', S.lim.H ? N(S.lim.H, 1) : '', S.lim.D ? N(S.lim.D, 1) : '']);
+  R.over.forEach(p => L.push(['Over size limit, left out', T(p.id), T(p.why)]));
+  usedTypes(R).forEach(t => L.push([`Blank allowance ${t} (+width; +height mm)`, N(addOf(t, S.typeAdd).w, 1), N(addOf(t, S.typeAdd).h, 1)]));
+  if (mass) R.mats.forEach(m => L.push([`Material${m.mat ? ' ' + m.mat : ''} (thickness mm; density kg/m³; price €/kg)`, N(m.t, 2), N(m.rho, 0), N(m.price, 2)]));
+  L.push([]);
+  const hd = ['Sheet', 'Material', 'Sheet width (mm)', 'Sheet height (mm)', 'Parts', 'Parts area (m²)', 'Reduced height (mm)', 'Kept full size', 'Max sheet area (m²)', 'Loss max (m²)', 'Loss max (%)', 'Reduced sheet area (m²)', 'Loss reduced (m²)', 'Loss reduced (%)', 'Saved (m²)'];
+  if (mass) hd.push('Loss max (kg)', 'Loss reduced (kg)', 'Saved (kg)');
+  if (R.cost) hd.push('Loss max (€)', 'Loss reduced (€)', 'Saved (€)');
+  L.push(hd);
+  const r = (lab, x, n) => {
+    const a = [lab, x.mat !== undefined ? T(x.mat) : '', x.W ? N(x.W, 1) : '', x.H ? N(x.H, 1) : '', n, N(m2(x.A), 4), x.hRed !== undefined ? N(x.hRed, 1) : '', x.hRed !== undefined ? (x.full ? 'yes' : 'no') : '', N(m2(x.Smax), 4), N(m2(x.lossMax), 4), N(pct(x.lossMax, x.Smax), 2), N(m2(x.Sred), 4), N(m2(x.lossRed), 4), N(pct(x.lossRed, x.Sred), 2), N(m2(x.saved), 4)];
+    if (mass) a.push(N(x.kg.lossMax, 2), N(x.kg.lossRed, 2), N(x.kg.saved, 2));
+    if (R.cost) a.push(N(x.eur.lossMax, 2), N(x.eur.lossRed, 2), N(x.eur.saved, 2));
+    return a;
+  };
+  sheets.forEach((s, k) => L.push(r(k + 1, s, s.items.length)));
+  L.push(r('Total', { ...tot, hRed: undefined, mat: undefined, W: 0, H: 0 }, tot.n));
+  L.push([], ['Placements (X from left edge, Y from bottom edge)'], ['Sheet', 'Material', 'Part', 'Width (mm)', 'Height (mm)', 'Rotated', 'X (mm)', 'Y (mm)']);
+  sheets.forEach((s, k) => s.items.slice().sort((a, b) => a.y - b.y || a.x - b.x).forEach(it =>
+    L.push([k + 1, T(s.mat), T(R.parts[it.pi].id), N(it.w, 1), N(it.h, 1), it.r ? 'yes' : 'no', N(it.x, 1), N(it.y, 1)])));
+  if (R.choice.length) {
+    L.push([], ['Size choice'], ['Material', 'Sheet sizes', 'Sheets', 'Reduced area (m²)', 'Chosen']);
+    R.choice.forEach(g => g.rows.forEach(x => L.push([T(g.mat), choiceSizesTxt(x), x.sheets, N(x.reducedM2, 4), x.chosen ? 'yes' : ''])));
+    L.push([T(choiceNote(R.choiceCap))]);
+  }
+  return L;
+}
+</script>
+<script>
+/* ---------- Formatting (Slovenian: 1.234,56) ---------- */
+// fmt, dim, matLabel, sizeLabel: defined in the engine script; m2, tsv, esc, inVal, today: in the model script
+
 
 /* ---------- Version and changelog ---------- */
 const CHANGELOG = (document.getElementById('changelog') || {}).textContent || '';
@@ -1596,34 +1979,10 @@ function mdToHTML(md) {
   flushP(); flushL();
   return out.join('\n');
 }
-function today() { const d = new Date(); return String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + d.getFullYear(); }
 
-function parseNum(v, mode) {
-  if (typeof v === 'number') return v;
-  if (v == null) return NaN;
-  let s = String(v).trim().replace(/[\s ]/g, '').replace(/mm$/i, '');
-  if (!s) return NaN;
-  if (mode === 'xml') { if (!s.includes('.')) s = s.replace(',', '.'); return Number(s); }
-  if (s.includes(',') && s.includes('.')) {
-    s = s.lastIndexOf(',') > s.lastIndexOf('.') ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
-  } else if (s.includes(',')) s = s.replace(',', '.');
-  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
-  return Number(s);
-}
 
 /* ---------- State ---------- */
 const $ = s => document.querySelector(s);
-const SAMPLE = [
-  { id: 'Side panel', w: 1180, h: 640, qty: 4 },
-  { id: 'Top cover', w: 1420, h: 520, qty: 2 },
-  { id: 'Door', w: 760, h: 590, qty: 3 },
-  { id: 'Base plate', w: 980, h: 450, qty: 2 },
-  { id: 'Bracket', w: 260, h: 140, qty: 12 },
-  { id: 'Rail', w: 1900, h: 90, qty: 6 },
-  { id: 'Filter frame', w: 540, h: 330, qty: 6 },
-  { id: 'Drip tray', w: 820, h: 310, qty: 2 },
-  { id: 'Mounting plate', w: 380, h: 280, qty: 5 }
-];
 let parts = [], srcName = '';
 let job = null, lastResult = null, isSample = false;
 
@@ -1649,15 +2008,6 @@ function renderParts() {
 }
 /* ---------- Part size limits (blank size, either orientation) ---------- */
 function readLim() { const v = id => { const n = parseNum($('#' + id).value); return n > 0 ? n : 0; }; return { W: v('limW'), H: v('limH'), D: v('limD') }; }
-const hasLim = L => L.W > 0 || L.H > 0 || L.D > 0;
-const limTxt = L => hasLim(L) ? [L.W || L.H ? `${L.W ? dim(L.W) : 'any'} × ${L.H ? dim(L.H) : 'any'} mm` : '', L.D ? `diagonal ${dim(L.D)} mm` : ''].filter(Boolean).join(', ') : 'None';
-function overLimit(w, h, L) {
-  const MW = L.W || Infinity, MH = L.H || Infinity, why = [];
-  if (!((w <= MW + EPS && h <= MH + EPS) || (h <= MW + EPS && w <= MH + EPS))) why.push(`${dim(w)} × ${dim(h)} mm is over ${L.W ? dim(L.W) : 'any'} × ${L.H ? dim(L.H) : 'any'} mm`);
-  const d = Math.hypot(w, h);
-  if (L.D && d > L.D + EPS) why.push(`diagonal ${fmt(d, 1)} mm is over ${dim(L.D)} mm`);
-  return why.join('; ');
-}
 function markLimits() {
   const L = readLim(), on = hasLim(L), over = [];
   document.querySelectorAll('#partsBody tr[data-i]').forEach(tr => {
@@ -1692,39 +2042,13 @@ $('#addPart').onclick = () => {
   const el = document.getElementById('pn' + (parts.length - 1)); el && el.focus();
 };
 /* ---------- Example Excel files ---------- */
-const EXAMPLES = {
-  ahu: { file: 'nesting-example-ahu-en.csv', head: ['Part', 'Width (mm)', 'Height (mm)', 'Qty'], rows: () => SAMPLE.map(p => [p.id, p.w, p.h, p.qty]) },
-  slo: { file: 'nesting-primer-ahu-sl.csv', head: ['Naziv', 'Širina (mm)', 'Višina (mm)', 'Količina'], rows: () => [
-    ['Stranica', 1180, 640, 4], ['Pokrov', 1420, 520, 2], ['Vrata', 760, 590, 3], ['Dno', 980, 450, 2],
-    ['Nosilec', 260, 140, 12], ['Letev', 1900, 90, 6], ['Okvir filtra', 540, 330, 6], ['Kadica', 820, 310, 2], ['Montažna plošča', 380, 280, 5]] },
-  bare: { file: 'nesting-example-no-header.csv', head: null, rows: () => [
-    ['P-101', 1200, 600, 3], ['P-102', 900, 450, 4], ['P-103', 640, 320, 8], ['P-104', 2100, 150, 4], ['P-105', 300, 200, 10]] },
-  large: { file: 'nesting-example-large.csv', head: ['ID', 'Width', 'Height', 'Quantity'], rows: () => {
-    let s = 20261024; const r = () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648;
-    const out = [];
-    for (let i = 1; i <= 30; i++) {
-      const big = r() < 0.3, w = Math.round((big ? 700 + r() * 1500 : 120 + r() * 600) / 5) * 5;
-      const h = Math.round((big ? 300 + r() * 600 : 80 + r() * 400) / 5) * 5;
-      out.push(['L-' + String(i).padStart(3, '0'), w, h, big ? 1 + Math.floor(r() * 3) : 2 + Math.floor(r() * 10)]);
-    }
-    return out;
-  } }
-};
 function exMsg(t, cls) { const m = $('#exMsg'); m.textContent = t; m.className = 'hint' + (cls ? ' ' + cls : ''); m.hidden = !t; }
-function exAoa(key) {
-  const ex = EXAMPLES[key], rows = ex.rows();
-  if (!rows.length) throw new Error('The parts list is empty. Add at least one valid part first.');
-  return ex.head ? [ex.head, ...rows] : rows;
-}
 function renderExPreview() {
   const key = $('#exSel').value, ex = EXAMPLES[key], rows = ex.rows();
   if (!rows.length) { $('#exPre').innerHTML = '<p class="hint" style="padding:10px">The parts list is empty.</p>'; return; }
   const head = ex.head ? `<thead><tr>${ex.head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>` : '';
   $('#exPre').innerHTML = `<table class="rtable">${head}<tbody>${rows.map(r => `<tr>${r.map((c, i) => `<td>${i ? esc(dim(c)) : esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
   $('#exArea').hidden = true;
-}
-function exTSV(key) {
-  return exAoa(key).map(r => r.map(c => typeof c === 'number' ? String(c).replace('.', ',') : String(c).replace(/[\t\n]/g, ' ')).join('\t')).join('\n');
 }
 $('#exSel').addEventListener('change', () => { exMsg(''); renderExPreview(); });
 $('#exCsv').onclick = () => {
@@ -1820,9 +2144,6 @@ Object.keys(matSheets).forEach(m => {
 });
 saveSizes(); try { localStorage.setItem(MAT_KEY, JSON.stringify(matSheets)); } catch (e) {}
 Object.values(matSheets).forEach(a => { if (a && Array.isArray(a.off)) a.off = a.off.filter(id => sheetSizes.some(z => z.id === id)); });
-function sizesFor(m, S) { const off = ((S ? S.matSheets : matSheets)[m] || {}).off || []; return (S ? S.sizes : sheetSizes).filter(x => !off.includes(x.id)); }
-const DEF_PROPS = { t: 1, rho: 7850, price: 0 };
-const isNum = x => typeof x === 'number' && isFinite(x);
 // One-time: earlier versions kept thickness / density / price in the settings key; move them to the "all parts" material
 try {
   const o = JSON.parse(localStorage.getItem('sheet-nesting-settings-v1') || 'null');
@@ -1837,11 +2158,6 @@ try {
     localStorage.setItem('sheet-nesting-settings-v1', JSON.stringify(o));
   }
 } catch (e) {}
-function propsOf(m, map) {
-  map = map || matSheets; const a = map[m] || {}, d = map[''] || {};
-  const pick = k => isNum(a[k]) ? a[k] : isNum(d[k]) ? d[k] : DEF_PROPS[k];
-  return { t: pick('t'), rho: pick('rho'), price: pick('price') };
-}
 function matKeys() {
   const by = {}; let none = 0;
   parts.forEach(p => { const q = p.qty > 0 ? p.qty : 0; if (p.mat) by[p.mat] = (by[p.mat] || 0) + q; else none += q; });
@@ -1889,9 +2205,6 @@ renderSizes();
 const TYPE_KEY ='sheet-nesting-types-v1';
 let typeAdd = {};
 try { typeAdd = JSON.parse(localStorage.getItem(TYPE_KEY) || '{}') || {}; } catch (e) { typeAdd = {}; }
-function addOf(t, map) { const a = (map || typeAdd)[t] || {}; return { w: a.w > 0 ? a.w : 0, h: a.h > 0 ? a.h : 0 }; }
-function blankOf(p, map) { if (!p.type) return { w: p.w, h: p.h }; const a = addOf(p.type, map); return { w: p.w + a.w, h: p.h + a.h }; }
-function usedTypes(R) { return [...new Set(R.parts.map(p => p.type).filter(Boolean))].sort(); }
 function renderTypes() {
   const by = {};
   parts.forEach(p => { if (!p.type) return; const b = by[p.type] || (by[p.type] = { n: 0, q: 0 }); b.n++; b.q += p.qty > 0 ? p.qty : 0; });
@@ -1946,8 +2259,6 @@ $('#resetSet').onclick = () => {
   renderSizes(); renderMats(); markLimits();
   topHint(); markStale();
 };
-function edgeList(S) { const a = []; if (S.mL) a.push('left'); if (S.mR) a.push('right'); if (S.mB) a.push('bottom'); if (S.topM) a.push('top'); return a.length ? a.join(', ') : 'none'; }
-function edgeM(S) { const m = S.margin; return { l: S.mL ? m : 0, r: S.mR ? m : 0, b: S.mB ? m : 0, t: S.topM ? m : 0 }; }
 function topHint() {
   const off = ['mL', 'mR', 'mB'].filter(id => !$('#' + id).checked).length;
   $('#topHint').textContent = ($('#topm').checked
@@ -1959,45 +2270,6 @@ function topHint() {
 topHint();
 
 /* ---------- File import ---------- */
-function norm(s) { return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
-function classify(name) {
-  const n = norm(name); if (!n) return null;
-  if (/^(qty|quantity|qnt|count|pcs|pieces|kos|kosov|kolicina|stevilo|amount|menge|stk|anzahl)$/.test(n) || /^(qty|quant|kolicin|kosov|pcs|count|anzahl)/.test(n)) return 'qty';
-  if (/^(w|width|sirina|breite|b|x|dimx|sizex)$/.test(n) || /^(width|sirin|breite)/.test(n)) return 'w';
-  if (/^(h|height|visina|hohe|hoehe|y|l|length|len|dolzina|lange|laenge|dimy|sizey)$/.test(n) || /^(height|visin|length|dolzin)/.test(n)) return 'h';
-  if (/^(material|mat|materijal|rawmaterial|werkstoff)/.test(n)) return 'mat';
-  if (/^(id|name|part|naziv|oznaka|pozicija|poz|ime|del|code|sifra|article|artikel|item|description|opis|label|ref)/.test(n)) return 'id';
-  return null;
-}
-// Single letters are ambiguous (x / y can be a position, b / l a width / length): full names win
-const WEAK = new Set(['x', 'y', 'b', 'l']);
-const isWeak = name => WEAK.has(norm(name));
-function partsFromRows(rows) {
-  let map = null, start = 0;
-  for (let r = 0; r < Math.min(rows.length, 15); r++) {
-    const m = {};
-    for (const weak of [false, true]) (rows[r] || []).forEach((c, ci) => { if (typeof c !== 'string' || isWeak(c) !== weak) return; const k = classify(c); if (k && m[k] === undefined) m[k] = ci; });
-    if (m.w !== undefined && m.h !== undefined) { map = m; start = r + 1; break; }
-  }
-  let note = 'Columns detected from the header row.';
-  if (!map) {
-    const first = rows.find(r => r && r.some(c => c !== null && c !== ''));
-    if (!first) return { list: [], note: '' };
-    map = isNaN(parseNum(first[0])) ? { id: 0, w: 1, h: 2, qty: 3 } : { w: 0, h: 1, qty: 2 };
-    note = 'No header found, so columns were read as ' + (map.id === 0 ? 'name, width, height, qty.' : 'width, height, qty.');
-  }
-  const list = [];
-  for (let r = start; r < rows.length; r++) {
-    const row = rows[r]; if (!row) continue;
-    const w = parseNum(row[map.w]), h = parseNum(row[map.h]);
-    if (!(w > 0 && h > 0)) continue;
-    let q = map.qty !== undefined ? Math.round(parseNum(row[map.qty])) : 1; if (!(q > 0)) q = 1;
-    const raw = map.id !== undefined ? row[map.id] : null;
-    const mv = map.mat !== undefined && row[map.mat] != null ? String(row[map.mat]).trim() : '';
-    list.push({ id: raw != null && String(raw).trim() !== '' ? String(raw).trim() : 'P' + (list.length + 1), w, h, qty: q, mat: mv });
-  }
-  return { list, note };
-}
 function partsFromXML(text) {
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   if (doc.getElementsByTagName('parsererror').length) throw new Error('The XML file could not be read. Check that it is well-formed.');
@@ -2094,60 +2366,32 @@ function readSettings() {
 }
 function startRun() {
   showErr('');
-  const S = readSettings();
-  if (!(S.gap >= 0) || !(S.margin >= 0)) return showErr('Gap between parts and edge margin must be 0 or more.');
-  if ((S.gH || S.gW) && (!(S.gGap >= 0) || S.gGap > S.gap)) return showErr('Gap at guillotine cut must be 0 or more and not larger than the gap between parts.');
-  if (![0, 2, 3].includes(S.stages)) return showErr('Cut stages must be 2, 3 or unlimited.');
-  if (!(S.ngW >= 0)) return showErr('Non-guillotine penalty must be 0 or more.');
-  // equal gaps also count as guillotine mode (the guillotine preference of search v2)
-  S.gl = (S.gH || S.gW) && S.gGap <= S.gap ? { G: S.gap, g: S.gGap, H: S.gH, W: S.gW, stages: S.stages, ngW: S.ngW * 1e6 } : null;
-  const E = edgeM(S);
-  if (S.sizes.some(x => !(x.W > 0 && x.H > 0))) return showErr('Enter a width and height for every sheet size, or remove the empty row.');
-  if (!(S.time > 0)) S.time = 5;
-  if (!(S.step >= 0)) S.step = 0;
-  if (!(S.minOff >= 0)) S.minOff = 0;
-  S.time = Math.min(Math.max(S.time, 0.5), 120);
-  const bad = parts.filter(p => !(p.w > 0 && p.h > 0 && p.qty > 0));
-  if (bad.length) return showErr(`Fix the highlighted values first: ${bad.map(p => p.id || 'unnamed').join(', ')}.`);
-  if (!parts.length) return showErr('Add at least one part.');
-
-  const byMat = new Map();
-  parts.forEach((p, pi) => { const m = p.mat || ''; if (!byMat.has(m)) byMat.set(m, []); byMat.get(m).push(pi); });
-  const groups = [], unfit = [], over = [];
-  for (const mat of [...byMat.keys()].sort()) {
-    const allowed = sizesFor(mat, S);
-    if (!allowed.length) return showErr(`Tick at least one sheet size for ${matLabel(mat)} under Materials.`);
-    const szs = [];
-    for (const x of allowed) {
-      if (E.l + E.r >= x.W || E.b + E.t >= x.H) return showErr(`The edge margin is too large for the ${sizeLabel(x)} mm sheet.`);
-      szs.push({ id: x.id, W: x.W, H: x.H, UW: x.W - E.l - E.r + S.gap, UH: x.H - E.b - E.t + S.gap });
-    }
-    const insts = [];
-    byMat.get(mat).forEach(pi => {
-      const p = parts[pi], { w: bw, h: bh } = blankOf(p, S.typeAdd), ew = bw + S.gap, eh = bh + S.gap;
-      const why = hasLim(S.lim) ? overLimit(bw, bh, S.lim) : '';
-      if (why) { over.push({ ...p, w: bw, h: bh, why }); return; }
-      const fits = szs.some(z => partFits(S.rot, z, ew, eh));
-      if (!fits) { unfit.push({ ...p, w: bw, h: bh, sheetTxt: szs.map(sizeLabel).join(' or ') }); return; }
-      for (let q = 0; q < p.qty; q++) insts.push({ pi, w: bw, h: bh, ew, eh });
-    });
-    if (!insts.length) continue;
-    const props = propsOf(mat, S.matSheets);
-    // Best k of the ticked sizes: the combinations to compare (error text when there are too many or none fits every part)
-    const cr = groupCands(S, insts, szs, S.sizesMax, mat);
-    if (cr.error) return showErr(cr.error);
-    groups.push({ mat, sizes: szs, multi: szs.length > 1, ...props, insts, cands: cr.cands });
-  }
-  if (!groups.length) return showErr(over.length && !unfit.length ? 'All parts are over the part size limits.' : 'None of the parts fit on their sheet with the current margin or within the part size limits.');
-  const fc = finishChoice(S, E, groups);
-  if (fc.error) return showErr(fc.error);
-  const run = newRun(S, E, groups, fc.cap);
+  const P = prepareRun(readSettings(), parts);
+  if (P.error) return showErr(P.error);
+  const { S, E, groups, unfit, over } = P;
+  const workers = poolSpawn(), data = workers ? poolGroups(groups) : null;
+  // with workers the main thread keeps a run without search state: the workers' best layouts go into its units
+  const run = newRun(S, E, groups, P.cap, workers ? { noInit: true } : null);
   const budget = S.time * 1000, choosing = run.stage === 1;
   job = { S, groups, run, gi: 0, unfit, over, parts: parts.map(p => ({ ...p })), src: srcName, dirty: false, t0: performance.now(), budget, stop: false,
-    stageT0: performance.now(), stageBudget: choosing ? budget * CHOICE_SCREEN : budget, stageBase: 0, halt: false, bestTot: null, lastImp: 0, nextCheck: 0 };
+    stageT0: performance.now(), stageBudget: choosing ? budget * CHOICE_SCREEN : budget, stageBase: 0, halt: false, bestTot: null, lastImp: 0, nextCheck: 0,
+    workers, data, poolId: 0 };
   $('#run').textContent = 'Stop'; $('#run').classList.add('stop');
-  step();
+  if (workers) { poolStage(job); poolTick(); } else step();
 }
+// Progress bar and text; el = ms into the current stage.
+function showProgress(j, el, over) {
+  const run = j.run;
+  $('#barFill').style.width = (over ? 100 : Math.min(100, (j.stageBase + el) / j.budget * 100)) + '%';
+  const nS = runSheets(run), fr = el / j.stageBudget;
+  $('#ptext').textContent = `${fmt(run.iter, 0)} layouts tried · best: ${nS} sheets` + (j.groups.length > 1 ? ` in ${j.groups.length} materials` : '') + (run.stage === 1 ? ' · comparing sheet sizes' : j.groups.some(g => g.multi) ? (fr < PH_ONE ? ' · trying each sheet size' : fr < PH_ORDER ? ' · choosing sheet sizes' : ' · merging and repacking sheets') : fr >= 0.75 ? ' · tightening heights' : fr < 0.5 ? ' · reducing sheet count' : ' · lowering heights');
+}
+// "Stop early when no improvement": halt the stage when the summed best score has not improved for max(2, 0,25 x elapsed) s.
+function stallCheck(j, now, el, tot) {
+  if (j.bestTot === null || tot < j.bestTot - EPS) { j.bestTot = tot; j.lastImp = now; }
+  else if ((now - j.lastImp) / 1000 >= Math.max(2, 0.25 * el / 1000)) j.halt = true;
+}
+// Single-thread search on the main thread (no Web Workers in this browser): 30 ms slices.
 function step() {
   const j = job; if (!j) return;
   const run = j.run, end = performance.now() + 30;
@@ -2164,85 +2408,83 @@ function step() {
       over = true; break;
     }
     runStep(run, el / j.stageBudget);
-    // "Stop early when no improvement": stop the stage when the summed best score has not improved for max(2, 0,25 x elapsed) s
-    if (j.S.stopEarly && now >= j.nextCheck) {
-      j.nextCheck = now + 100;
-      const tot = runScore(run);
-      if (j.bestTot === null || tot < j.bestTot - EPS) { j.bestTot = tot; j.lastImp = now; }
-      else if ((now - j.lastImp) / 1000 >= Math.max(2, 0.25 * el / 1000)) j.halt = true;
-    }
+    if (j.S.stopEarly && now >= j.nextCheck) { j.nextCheck = now + 100; stallCheck(j, now, el, runScore(run)); }
   }
-  const el = performance.now() - j.stageT0;
-  $('#barFill').style.width = (over ? 100 : Math.min(100, (j.stageBase + el) / j.budget * 100)) + '%';
-  const nS = runSheets(run), fr = el / j.stageBudget;
-  $('#ptext').textContent = `${fmt(run.iter, 0)} layouts tried · best: ${nS} sheets` + (j.groups.length > 1 ? ` in ${j.groups.length} materials` : '') + (run.stage === 1 ? ' · comparing sheet sizes' : j.groups.some(g => g.multi) ? (fr < PH_ONE ? ' · trying each sheet size' : fr < PH_ORDER ? ' · choosing sheet sizes' : ' · merging and repacking sheets') : fr >= 0.75 ? ' · tightening heights' : fr < 0.5 ? ' · reducing sheet count' : ' · lowering heights');
+  showProgress(j, performance.now() - j.stageT0, over);
   if (over) finish(); else setTimeout(step, 0);
+}
+/* ---------- Search workers (port of nest-core pool.rs run_pool): the search runs in min(8, cores - 1) Web Workers made from the
+   engine script (poolWorkerMain); this thread keeps the best layout per unit (poolTake), passes improvements on and ends the
+   stages. Without Worker support, or after a worker error, the search runs on this thread (step). ---------- */
+const POOL_THREADS = Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 2) - 1));
+let poolWorkers = null, poolBroken = false;
+function poolSpawn() {
+  if (poolWorkers || poolBroken) return poolWorkers;
+  try {
+    if (typeof Worker === 'undefined' || typeof MessageChannel === 'undefined') return null;
+    const url = URL.createObjectURL(new Blob([document.getElementById('engine').textContent, '\npoolWorkerMain(self);\n'], { type: 'text/javascript' }));
+    const ws = [];
+    for (let k = 0; k < POOL_THREADS; k++) {
+      const w = new Worker(url);
+      w.onmessage = e => poolMsg(k, e.data);
+      w.onerror = e => { e.preventDefault(); poolFail(e.message || 'unknown error'); };
+      ws.push(w);
+    }
+    poolWorkers = ws;
+  } catch (e) { poolBroken = true; poolWorkers = null; }
+  return poolWorkers;
+}
+// A worker failed: stop all of them; the next run searches on this thread.
+function poolFail(msg) {
+  if (poolWorkers) poolWorkers.forEach(w => w.terminate());
+  poolWorkers = null; poolBroken = true;
+  const j = job; if (!j || !j.workers) return;
+  job = null;
+  $('#run').textContent = 'Run nesting'; $('#run').classList.remove('stop');
+  $('#ptext').textContent = '';
+  showErr(`The search stopped: a search worker failed (${msg}). Run again to search without workers.`);
+}
+// Starts the current stage of the run on every worker (stage 2: the groups now hold the winning sizes and no candidates).
+function poolStage(j) {
+  const run = j.run, n = j.workers.length, id = ++j.poolId;
+  const groups = run.stage === 1 ? j.data : poolGroups(run.groups);
+  Object.assign(j, { slots: [], pending: [], finals: 0, wIter: new Array(n).fill(0), ending: false, iterBase: run.iter });
+  j.workers.forEach((w, k) => w.postMessage({ type: 'start', id, k, n, S: j.S, E: run.E, groups, cap: run.stage === 1 ? run.choiceCap : null, budget: j.stageBudget }));
+}
+function poolMsg(k, m) {
+  const j = job; if (!j || !j.workers || m.id !== j.poolId) return;
+  j.wIter[k] = m.iter;
+  for (const e of poolTake(j.slots, m)) { j.pending.push(e); j.run.units[e.ui].best = { sheets: e.sheets, score: e.score }; }
+  if (m.type === 'final') j.finals++;
+}
+function poolTick() {
+  const j = job; if (!j || !j.workers) return;
+  const run = j.run, now = performance.now(), el = now - j.stageT0, n = j.workers.length;
+  if (j.pending.length) { const units = j.pending; j.pending = []; j.workers.forEach(w => w.postMessage({ type: 'board', id: j.poolId, units })); }
+  run.iter = j.iterBase + j.wIter.reduce((s, x) => s + x, 0);
+  if (j.S.stopEarly && !j.ending && j.slots.length === run.units.length && j.slots.every(Boolean)) stallCheck(j, now, el, j.slots.reduce((s, e) => s + e.score, 0));
+  if (!j.ending && (el >= j.stageBudget || j.stop || j.halt)) { j.ending = true; j.workers.forEach(w => w.postMessage({ type: 'end', id: j.poolId })); }
+  if (j.ending && j.finals >= n) { // every worker sent its final layouts: they are in the run's units
+    if (run.stage === 1 && !runEndScreening(run, j.stop)) {
+      Object.assign(j, { stageT0: performance.now(), stageBudget: j.budget * (1 - CHOICE_SCREEN), stageBase: j.budget * CHOICE_SCREEN, halt: false, bestTot: null });
+      poolStage(j);
+    } else { showProgress(j, el, true); return finish(); }
+  }
+  showProgress(j, Math.min(el, j.stageBudget), false);
+  setTimeout(poolTick, 50);
 }
 function finish() {
   const j = job; job = null;
   runFinish(j.run);
   $('#run').textContent = 'Run nesting'; $('#run').classList.remove('stop');
   $('#barFill').style.width = '100%';
-  $('#ptext').textContent = `Done · ${fmt(j.run.iter, 0)} layouts tried in ${fmt((performance.now() - j.t0) / 1000, 1)} s`;
+  $('#ptext').textContent = `Done · ${fmt(j.run.iter, 0)} layouts tried in ${fmt((performance.now() - j.t0) / 1000, 1)} s` + (j.workers ? ` on ${j.workers.length} search worker${j.workers.length > 1 ? 's' : ''}` : '');
   lastResult = buildResult(j);
   $('#stale').hidden = !j.dirty;
   renderResults(lastResult);
 }$('#run').onclick = () => { if (job) job.stop = true; else startRun(); };
 
 /* ---------- Results ---------- */
-const SUMK = ['A', 'Smax', 'Sred', 'lossMax', 'lossRed', 'saved'];
-function sumSheets(list) {
-  const sum = f => SUMK.reduce((o, k) => (o[k] = list.reduce((s, x) => s + f(x)[k], 0), o), {});
-  const t = sum(x => x); t.kg = sum(x => x.kg); t.eur = sum(x => x.eur);
-  t.n = list.reduce((s, x) => s + x.items.length, 0); t.count = list.length; return t;
-}
-const glTxt = S => S.gl ? [S.gl.H ? 'height' : '', S.gl.W ? 'width' : ''].filter(Boolean).join(', ') + (S.gl.stages ? `, max ${S.gl.stages} cut stages` : '') : 'off';
-function buildResult(j) {
-  const { S } = j, E = edgeM(S);
-  const sheets = [], mats = [];
-  for (const g of j.groups) {
-    const { ctx, mat } = g, hasM = g.t > 0 && g.rho > 0;
-    const kgOf = a => hasM ? m2(a) * (g.t / 1000) * g.rho : 0;
-    const list = g.best.sheets.map(sh => {
-      const sz = g.sizes[sh.si || 0], W = sz.W, H = sz.H;
-      const items = sh.items.map(it => {
-        const p = ctx.insts[it.i];
-        const w = it.r ? p.h : p.w, h = it.r ? p.w : p.h;
-        return { pi: p.pi, x: E.l + it.x, y: E.b + it.y, w, h, r: it.r };
-      });
-      const realTop = Math.max(...items.map(i => i.y + i.h));
-      const { hRed, full } = reducedH(H, realTop, S, E);
-      const A = items.reduce((s, i) => s + i.w * i.h, 0);
-      const Smax = W * H, Sred = W * hRed;
-      const out = { mat, W, H, items, hRed, full, A, Smax, Sred, lossMax: Smax - A, lossRed: Sred - A, saved: Smax - Sred };
-      if (S.gl) { out.cuts = []; glCutSegs(glTree(items.map(i => ({ x: i.x, y: i.y, w: i.w, h: i.h })), S.gl), { x1: 0, y1: 0, x2: W, y2: hRed }, out.cuts); }
-      out.kg = SUMK.reduce((o, k) => (o[k] = kgOf(out[k]), o), {});
-      out.eur = SUMK.reduce((o, k) => (o[k] = out.kg[k] * (g.price || 0), o), {});
-      return out;
-    }).sort((a, b) => b.W * b.H - a.W * a.H || b.hRed - a.hRed || b.A - a.A);
-    sheets.push(...list);
-    mats.push({ mat, sizes: sizeCounts(list), allowed: g.sizes, t: g.t, rho: g.rho, price: g.price, ...sumSheets(list) });
-  }
-  const tot = sumSheets(sheets);
-  const hasMat = sheets.some(s => s.mat);
-  const mass = mats.some(m => m.t > 0 && m.rho > 0), cost = mats.some(m => m.t > 0 && m.rho > 0 && m.price > 0);
-  const sizesUsed = sizeCounts(sheets);
-  return { S, sheets, tot, mats, hasMat, mass, cost, sizesUsed, multiSize: sizesUsed.length > 1, unfit: j.unfit, over: j.over, choice: j.run.choice, choiceCap: j.run.choiceCap, parts: j.parts.map(p => { const b = blankOf(p, S.typeAdd); return { ...p, bw: b.w, bh: b.h }; }), date: today(), src: j.src };
-}
-function sizeCounts(list) {
-  const by = new Map();
-  list.forEach(x => { const k = x.W + 'x' + x.H, c = by.get(k) || { W: x.W, H: x.H, n: 0 }; c.n++; by.set(k, c); });
-  return [...by.values()].sort((a, b) => a.W * a.H - b.W * b.H);
-}
-const sizeListTxt = arr => arr.length === 1 ? `${sizeLabel(arr[0])} mm` : arr.map(x => `${x.n}× ${sizeLabel(x)}`).join(' · ') + ' mm';
-const sizeTxt = R => sizeListTxt(R.sizesUsed);
-// "2.500 × 1.250 · 3.000 × 1.500" (mm) for a row of the size choice table
-const choiceSizesTxt = x => x.sizes.map(([W, H]) => sizeLabel({ W, H })).join(' · ');
-const massTxt = (x, k, R) => (R.mass ? ' · ' + fmt(x.kg[k], 1) + ' kg' : '') + (R.cost ? ' · ' + fmt(x.eur[k], 2) + ' €' : '');
-const pct = (a, b) => b > 0 ? a / b * 100 : 0;
-// portrait sheets get a side-by-side layout (drawing + stats) on screen and in the report
-const isTall = s => s.H > s.W;
-const sheetCounts = s => { const c = {}; s.items.forEach(i => c[i.pi] = (c[i.pi] || 0) + 1); return Object.keys(c).map(Number).sort((a, b) => a - b).map(pi => [pi, c[pi]]); };
 
 function renderResults(R) {
   const { S, sheets, tot } = R, mass = R.mass;
@@ -2324,12 +2566,6 @@ function sheetSVG(s, k, R) {
   }
   return o + '</svg>';
 }
-const xlText = s => /^[=+\-@]/.test(String(s)) ? "'" + s : s;
-const toTSV = L => L.map(a => a.map(c => String(c).replace(/[\t\r\n]+/g, ' ')).join('\t')).join('\n');
-const buildTSV = R => toTSV(resultRows(R));
-// CSV for Slovene Excel: semicolon separator, decimal comma, UTF-8 BOM so Š/Č/Ž and m² show correctly
-const csvCell = c => { c = typeof c === 'number' ? String(c).replace('.', ',') : String(c ?? ''); return /[;"\r\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; };
-const toCSV = L => '﻿' + L.map(a => a.map(csvCell).join(';')).join('\r\n') + '\r\n';
 function saveBlob(blob, name) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -2345,40 +2581,6 @@ function saveXLSX(R) {
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Results');
     XLSX.writeFile(wb, `nesting-results-${today()}.xlsx`, { compression: true });
   } catch (e) { alert(e.message.startsWith('The Excel library') ? e.message : 'Excel file could not be saved: ' + e.message); }
-}
-function resultRows(R, xl) {
-  const N = xl ? (n, d) => isFinite(n) ? +n.toFixed(d) : '' : tsv, T = xl ? (s => s) : xlText;
-  const { S, sheets, tot } = R, mass = R.mass;
-  const L = [];
-  L.push([T('Sheet nesting result'), R.date, APP_VERSION ? 'v' + APP_VERSION : '']);
-  S.sizes.forEach(x => L.push(['Sheet size (width; height mm)', N(x.W, 1), N(x.H, 1)]));
-  R.mats.forEach(m => { if (m.allowed.length < S.sizes.length) L.push([`Sheet sizes allowed${m.mat ? ' ' + m.mat : ''}`, m.allowed.map(sizeLabel).join(' · ')]); });
-  L.push(['Gap between parts (mm)', N(S.gap, 1)], ['Guillotine cuts', glTxt(S)], ...(S.gl ? [['Gap at guillotine cut (mm)', N(S.gl.g, 1)]] : []), ['Edge margin (mm)', N(S.margin, 1)], ['Rotation', S.rot ? 'yes' : 'no'], ['Edge margin on', edgeList(S)], ['Round reduced height up to (mm)', N(S.step, 1)], ['Keep full size if offcut under (mm)', N(S.minOff, 1)], ['Part size limits (max width; max height; max diagonal mm)', S.lim.W ? N(S.lim.W, 1) : '', S.lim.H ? N(S.lim.H, 1) : '', S.lim.D ? N(S.lim.D, 1) : '']);
-  R.over.forEach(p => L.push(['Over size limit, left out', T(p.id), T(p.why)]));
-  usedTypes(R).forEach(t => L.push([`Blank allowance ${t} (+width; +height mm)`, N(addOf(t, S.typeAdd).w, 1), N(addOf(t, S.typeAdd).h, 1)]));
-  if (mass) R.mats.forEach(m => L.push([`Material${m.mat ? ' ' + m.mat : ''} (thickness mm; density kg/m³; price €/kg)`, N(m.t, 2), N(m.rho, 0), N(m.price, 2)]));
-  L.push([]);
-  const hd = ['Sheet', 'Material', 'Sheet width (mm)', 'Sheet height (mm)', 'Parts', 'Parts area (m²)', 'Reduced height (mm)', 'Kept full size', 'Max sheet area (m²)', 'Loss max (m²)', 'Loss max (%)', 'Reduced sheet area (m²)', 'Loss reduced (m²)', 'Loss reduced (%)', 'Saved (m²)'];
-  if (mass) hd.push('Loss max (kg)', 'Loss reduced (kg)', 'Saved (kg)');
-  if (R.cost) hd.push('Loss max (€)', 'Loss reduced (€)', 'Saved (€)');
-  L.push(hd);
-  const r = (lab, x, n) => {
-    const a = [lab, x.mat !== undefined ? T(x.mat) : '', x.W ? N(x.W, 1) : '', x.H ? N(x.H, 1) : '', n, N(m2(x.A), 4), x.hRed !== undefined ? N(x.hRed, 1) : '', x.hRed !== undefined ? (x.full ? 'yes' : 'no') : '', N(m2(x.Smax), 4), N(m2(x.lossMax), 4), N(pct(x.lossMax, x.Smax), 2), N(m2(x.Sred), 4), N(m2(x.lossRed), 4), N(pct(x.lossRed, x.Sred), 2), N(m2(x.saved), 4)];
-    if (mass) a.push(N(x.kg.lossMax, 2), N(x.kg.lossRed, 2), N(x.kg.saved, 2));
-    if (R.cost) a.push(N(x.eur.lossMax, 2), N(x.eur.lossRed, 2), N(x.eur.saved, 2));
-    return a;
-  };
-  sheets.forEach((s, k) => L.push(r(k + 1, s, s.items.length)));
-  L.push(r('Total', { ...tot, hRed: undefined, mat: undefined, W: 0, H: 0 }, tot.n));
-  L.push([], ['Placements (X from left edge, Y from bottom edge)'], ['Sheet', 'Material', 'Part', 'Width (mm)', 'Height (mm)', 'Rotated', 'X (mm)', 'Y (mm)']);
-  sheets.forEach((s, k) => s.items.slice().sort((a, b) => a.y - b.y || a.x - b.x).forEach(it =>
-    L.push([k + 1, T(s.mat), T(R.parts[it.pi].id), N(it.w, 1), N(it.h, 1), it.r ? 'yes' : 'no', N(it.x, 1), N(it.y, 1)])));
-  if (R.choice.length) {
-    L.push([], ['Size choice'], ['Material', 'Sheet sizes', 'Sheets', 'Reduced area (m²)', 'Chosen']);
-    R.choice.forEach(g => g.rows.forEach(x => L.push([T(g.mat), choiceSizesTxt(x), x.sheets, N(x.reducedM2, 4), x.chosen ? 'yes' : ''])));
-    L.push([T(choiceNote(R.choiceCap))]);
-  }
-  return L;
 }
 /* ---------- Report for Word ---------- */
 const PAL = ['#9db4e8', '#e8b98a', '#a9d3b5', '#d9a5c4', '#e3d07f', '#9fd0d6', '#c3b2e6', '#e3a3a0'];
